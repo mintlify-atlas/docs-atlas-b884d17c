@@ -1,0 +1,111 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Heretic",
+  "projectDescription": "Fully automatic censorship removal for language models using directional ablation and parameter optimization",
+  "theme": "aspen",
+  "primaryColor": "#94cb04",
+  "lightColor": "#545454",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/how-it-works",
+              "concepts/abliteration",
+              "concepts/optimization"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Usage",
+        "groups": [
+          {
+            "group": "CLI Reference",
+            "pages": [
+              "cli/overview",
+              "cli/basic-usage",
+              "cli/options"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/overview",
+              "configuration/model-loading",
+              "configuration/optimization",
+              "configuration/evaluation"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/quantization",
+              "advanced/hardware-optimization",
+              "advanced/model-upload"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Research",
+        "groups": [
+          {
+            "group": "Analysis Features",
+            "pages": [
+              "research/overview",
+              "research/residual-plots",
+              "research/geometry-analysis"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Resources",
+            "pages": [
+              "reference/supported-models",
+              "reference/troubleshooting",
+              "reference/faq",
+              "reference/citation"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Fully automatic censorship removal via abliteration",
+    "TPE-based parameter optimization with Optuna",
+    "Flexible ablation weight kernels across transformer layers",
+    "Built-in model evaluation and quality metrics",
+    "Quantization support for reduced VRAM usage",
+    "Research tools for residual vector analysis",
+    "Hugging Face integration for model sharing",
+    "Support for dense and MoE architectures"
+  ],
+  "publicApiSurface": [
+    "heretic <model> - Main command to decensor a model",
+    "heretic --help - Display all available options",
+    "heretic --plot-residuals - Generate residual vector plots",
+    "heretic --print-residual-geometry - Print residual geometry analysis",
+    "heretic --evaluate-model <model> - Evaluate model performance",
+    "heretic --quantization bnb_4bit - Enable 4-bit quantization",
+    "heretic --n-trials <n> - Set number of optimization trials",
+    "heretic --config <path> - Load configuration from TOML file"
+  ]
+}
