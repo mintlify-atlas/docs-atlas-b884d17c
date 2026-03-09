@@ -1,0 +1,468 @@
+---
+title: CLI Options Reference
+description: Complete reference for all Heretic command-line options
+---
+
+This page documents all command-line options available in Heretic. Options can also be set via environment variables (with `HERETIC_` prefix) or in a `config.toml` file.
+
+## Model Loading
+
+<ParamField path="model" type="string" required>
+  HuggingFace model ID or path to model on disk.
+  
+  **Examples**:
+  ```bash
+  heretic meta-llama/Llama-3.1-8B-Instruct
+  heretic /path/to/local/model
+  heretic --model Qwen/Qwen3-4B-Instruct-2507
+  ```
+  
+  <Note>If provided as the last argument without `--model` flag, it will be automatically recognized as the model parameter.</Note>
+</ParamField>
+
+<ParamField path="evaluate-model" type="string" default="null">
+  Model ID or path to evaluate against the main model instead of performing abliteration.
+  
+  **Example**:
+  ```bash
+  heretic --model google/gemma-3-12b-it \
+    --evaluate-model p-e-w/gemma-3-12b-it-heretic
+  ```
+  
+  This compares the refusals and KL divergence of the evaluated model relative to the base model.
+</ParamField>
+
+<ParamField path="dtypes" type="list[string]" default='["auto", "float16", "bfloat16", "float32"]'>
+  List of PyTorch dtypes to try when loading model tensors. If loading with a dtype fails, the next dtype in the list will be tried.
+  
+  **Example**:
+  ```bash
+  heretic --dtypes auto float16 MODEL_NAME
+  ```
+</ParamField>
+
+<ParamField path="quantization" type="string" default="none">
+  Quantization method to use when loading the model.
+  
+  **Options**:
+  - `none`: No quantization (full precision)
+  - `bnb_4bit`: 4-bit quantization using bitsandbytes
+  
+  **Example**:
+  ```bash
+  heretic --quantization bnb_4bit MODEL_NAME
+  ```
+  
+  <Info>4-bit quantization can reduce VRAM requirements by ~75% with minimal quality impact, enabling processing of larger models on consumer GPUs.</Info>
+</ParamField>
+
+<ParamField path="device-map" type="string | dict" default="auto">
+  Device map to pass to Accelerate when loading the model.
+  
+  **Examples**:
+  ```bash
+  # Automatic device mapping
+  heretic --device-map auto MODEL_NAME
+  
+  # Manual device mapping (use config file)
+  # config.toml:
+  # device_map = {"model.embed": 0, "model.layers": 1}
+  ```
+</ParamField>
+
+<ParamField path="max-memory" type="dict" default="null">
+  Maximum memory to allocate per device. Useful for multi-GPU setups or when sharing GPU with other processes.
+  
+  **Example** (requires config file):
+  ```toml
+  max_memory = {"0": "20GB", "1": "20GB", "cpu": "64GB"}
+  ```
+</ParamField>
+
+<ParamField path="trust-remote-code" type="boolean" default="null">
+  Whether to trust remote code when loading the model. Some models require custom code that must be explicitly trusted.
+  
+  **Example**:
+  ```bash
+  heretic --trust-remote-code MODEL_NAME
+  ```
+  
+  <Warning>Only enable for models from trusted sources, as remote code can execute arbitrary Python.</Warning>
+</ParamField>
+
+## Performance & Optimization
+
+<ParamField path="batch-size" type="integer" default="0">
+  Number of input sequences to process in parallel. Set to 0 for automatic determination.
+  
+  **Example**:
+  ```bash
+  heretic --batch-size 8 MODEL_NAME
+  ```
+  
+  <Tip>Automatic batch size detection (default) is recommended. It benchmarks your hardware to find the optimal throughput.</Tip>
+</ParamField>
+
+<ParamField path="max-batch-size" type="integer" default="128">
+  Maximum batch size to try when automatically determining the optimal batch size.
+  
+  **Example**:
+  ```bash
+  heretic --max-batch-size 64 MODEL_NAME
+  ```
+</ParamField>
+
+<ParamField path="max-response-length" type="integer" default="100">
+  Maximum number of tokens to generate for each response during evaluation.
+  
+  **Example**:
+  ```bash
+  heretic --max-response-length 150 MODEL_NAME
+  ```
+  
+  Longer responses take more time but may improve refusal detection accuracy.
+</ParamField>
+
+## Optimization Parameters
+
+<ParamField path="n-trials" type="integer" default="200">
+  Number of abliteration trials to run during optimization.
+  
+  **Example**:
+  ```bash
+  heretic --n-trials 300 MODEL_NAME
+  ```
+  
+  <Info>More trials increase the chance of finding better parameters but take longer. 200 is a good balance for most use cases.</Info>
+</ParamField>
+
+<ParamField path="n-startup-trials" type="integer" default="60">
+  Number of trials that use random sampling for exploration before switching to TPE (Tree-structured Parzen Estimator) optimization.
+  
+  **Example**:
+  ```bash
+  heretic --n-startup-trials 80 MODEL_NAME
+  ```
+  
+  Higher values improve initial exploration but delay focused optimization.
+</ParamField>
+
+<ParamField path="study-checkpoint-dir" type="string" default="checkpoints">
+  Directory to save and load study progress to/from.
+  
+  **Example**:
+  ```bash
+  heretic --study-checkpoint-dir ./my-checkpoints MODEL_NAME
+  ```
+  
+  Checkpoints enable resuming interrupted runs and reviewing previous results.
+</ParamField>
+
+<ParamField path="kl-divergence-scale" type="float" default="1.0">
+  Assumed "typical" value of the Kullback-Leibler divergence for abliterated models. Used to ensure balanced co-optimization of KL divergence and refusal count.
+  
+  **Example**:
+  ```bash
+  heretic --kl-divergence-scale 0.5 MODEL_NAME
+  ```
+</ParamField>
+
+<ParamField path="kl-divergence-target" type="float" default="0.01">
+  KL divergence target threshold. Below this value, optimization focuses on refusal count. This prevents exploring parameters that have no effect.
+  
+  **Example**:
+  ```bash
+  heretic --kl-divergence-target 0.02 MODEL_NAME
+  ```
+</ParamField>
+
+## Abliteration Method
+
+<ParamField path="orthogonalize-direction" type="boolean" default="false">
+  Whether to adjust refusal directions so that only the component orthogonal to the "good" direction is subtracted during abliteration.
+  
+  **Example**:
+  ```bash
+  heretic --orthogonalize-direction MODEL_NAME
+  ```
+  
+  Implements [projected abliteration](https://huggingface.co/blog/grimjim/projected-abliteration). May improve capability retention in some models.
+</ParamField>
+
+<ParamField path="row-normalization" type="string" default="none">
+  How to apply row normalization of the weights.
+  
+  **Options**:
+  - `none`: No normalization
+  - `pre`: Compute LoRA adapter relative to row-normalized weights
+  - `full`: Like `pre`, but renormalizes to preserve original row magnitudes
+  
+  **Example**:
+  ```bash
+  heretic --row-normalization pre MODEL_NAME
+  ```
+  
+  Implements [norm-preserving abliteration](https://huggingface.co/blog/grimjim/norm-preserving-biprojected-abliteration).
+</ParamField>
+
+<ParamField path="full-normalization-lora-rank" type="integer" default="3">
+  Rank of the LoRA adapter when `full` row normalization is used. Higher ranks provide better approximation but increase file size and evaluation time.
+  
+  **Example**:
+  ```bash
+  heretic --row-normalization full \
+    --full-normalization-lora-rank 5 \
+    MODEL_NAME
+  ```
+</ParamField>
+
+<ParamField path="winsorization-quantile" type="float" default="1.0">
+  Symmetric winsorization quantile for per-prompt, per-layer residual vectors (between 0 and 1). Disabled by default (1.0).
+  
+  **Example**:
+  ```bash
+  heretic --winsorization-quantile 0.95 MODEL_NAME
+  ```
+  
+  This clamps residual magnitudes to the specified quantile, taming "massive activations" in some models. Value of 0.95 means components are clamped to the 95th percentile magnitude.
+</ParamField>
+
+## Evaluation & Datasets
+
+<ParamField path="refusal-markers" type="list[string]" default="[see config.default.toml]">
+  Strings whose presence in a response (case-insensitive) identifies it as a refusal.
+  
+  Default includes: `sorry`, `i cannot`, `as an ai`, `harmful`, `unethical`, etc.
+  
+  **Example** (config file):
+  ```toml
+  refusal_markers = [
+    "i cannot",
+    "i'm unable",
+    "inappropriate",
+    "against my guidelines",
+  ]
+  ```
+</ParamField>
+
+<ParamField path="system-prompt" type="string" default="You are a helpful assistant.">
+  System prompt to use when prompting the model.
+  
+  **Example**:
+  ```bash
+  heretic --system-prompt "You are a helpful AI." MODEL_NAME
+  ```
+</ParamField>
+
+### Dataset Configuration
+
+Heretic uses four datasets for training and evaluation. Each dataset can be configured with these sub-parameters:
+
+<ParamField path="good-prompts" type="object">
+  Dataset of prompts that tend to NOT result in refusals (used for calculating refusal directions).
+  
+  **Default**:
+  ```toml
+  [good_prompts]
+  dataset = "mlabonne/harmless_alpaca"
+  split = "train[:400]"
+  column = "text"
+  prefix = ""
+  suffix = ""
+  system_prompt = null  # Uses global system_prompt if null
+  ```
+</ParamField>
+
+<ParamField path="bad-prompts" type="object">
+  Dataset of prompts that tend to result in refusals (used for calculating refusal directions).
+  
+  **Default**:
+  ```toml
+  [bad_prompts]
+  dataset = "mlabonne/harmful_behaviors"
+  split = "train[:400]"
+  column = "text"
+  ```
+</ParamField>
+
+<ParamField path="good-evaluation-prompts" type="object">
+  Dataset of harmless prompts used for evaluating model performance (KL divergence measurement).
+  
+  **Default**:
+  ```toml
+  [good_evaluation_prompts]
+  dataset = "mlabonne/harmless_alpaca"
+  split = "test[:100]"
+  column = "text"
+  ```
+</ParamField>
+
+<ParamField path="bad-evaluation-prompts" type="object">
+  Dataset of harmful prompts used for evaluating model performance (refusal counting).
+  
+  **Default**:
+  ```toml
+  [bad_evaluation_prompts]
+  dataset = "mlabonne/harmful_behaviors"
+  split = "test[:100]"
+  column = "text"
+  ```
+</ParamField>
+
+**Custom Dataset Example**:
+```toml
+[bad_prompts]
+dataset = "my-org/custom-harmful-prompts"
+split = "train[:500]"
+column = "prompt_text"
+prefix = "[INST] "
+suffix = " [/INST]"
+system_prompt = "You are an AI assistant."
+```
+
+<Note>Datasets can be HuggingFace dataset IDs or local file paths. The split parameter uses HuggingFace slice notation.</Note>
+
+## Research Features
+
+<Warning>
+Research features require the `research` extra: `pip install heretic-llm[research]`
+</Warning>
+
+<ParamField path="print-responses" type="boolean" default="false">
+  Whether to print prompt/response pairs when counting refusals.
+  
+  **Example**:
+  ```bash
+  heretic --print-responses MODEL_NAME
+  ```
+  
+  Useful for debugging refusal detection or understanding model behavior.
+</ParamField>
+
+<ParamField path="print-residual-geometry" type="boolean" default="false">
+  Whether to print detailed information about residuals and refusal directions.
+  
+  **Example**:
+  ```bash
+  heretic --print-residual-geometry MODEL_NAME
+  ```
+  
+  Outputs a detailed table with per-layer metrics including:
+  - Cosine similarities between good/bad/refusal directions
+  - L2 norms of direction vectors
+  - Silhouette coefficients for clustering quality
+</ParamField>
+
+<ParamField path="plot-residuals" type="boolean" default="false">
+  Whether to generate plots showing PaCMAP projections of residual vectors.
+  
+  **Example**:
+  ```bash
+  heretic --plot-residuals MODEL_NAME
+  ```
+  
+  Generates:
+  - PNG image for each transformer layer
+  - Animated GIF showing transformation between layers
+  
+  <Warning>PaCMAP projection is CPU-intensive and can take over an hour for large models.</Warning>
+</ParamField>
+
+<ParamField path="residual-plot-path" type="string" default="plots">
+  Base path to save plots of residual vectors.
+  
+  **Example**:
+  ```bash
+  heretic --plot-residuals \
+    --residual-plot-path ./visualizations \
+    MODEL_NAME
+  ```
+</ParamField>
+
+<ParamField path="residual-plot-title" type="string" default='PaCMAP Projection of Residual Vectors for "Harmless" and "Harmful" Prompts'>
+  Title placed above plots of residual vectors.
+  
+  **Example**:
+  ```bash
+  heretic --plot-residuals \
+    --residual-plot-title "My Model Analysis" \
+    MODEL_NAME
+  ```
+</ParamField>
+
+<ParamField path="residual-plot-style" type="string" default="dark_background">
+  Matplotlib style sheet to use for plots of residual vectors.
+  
+  **Example**:
+  ```bash
+  heretic --plot-residuals \
+    --residual-plot-style seaborn-v0_8 \
+    MODEL_NAME
+  ```
+  
+  See [Matplotlib style sheets](https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html) for available options.
+</ParamField>
+
+## Configuration File Example
+
+Instead of long command lines, create `config.toml` in your working directory:
+
+```toml
+# Model settings
+quantization = "bnb_4bit"
+max_memory = {"0": "22GB", "cpu": "64GB"}
+
+# Optimization settings
+n_trials = 300
+n_startup_trials = 100
+max_response_length = 150
+
+# Advanced abliteration
+orthogonalize_direction = true
+row_normalization = "pre"
+
+# Custom system prompt
+system_prompt = "You are a helpful, knowledgeable assistant."
+
+# Custom harmful prompts dataset
+[bad_prompts]
+dataset = "my-org/adversarial-prompts"
+split = "train[:600]"
+column = "text"
+
+[bad_evaluation_prompts]
+dataset = "my-org/adversarial-prompts"
+split = "test[:150]"
+column = "text"
+```
+
+Then run:
+```bash
+heretic my-model-name
+```
+
+All settings from the config file will be applied automatically.
+
+## Environment Variables
+
+Any option can be set via environment variable with the `HERETIC_` prefix:
+
+```bash
+export HERETIC_QUANTIZATION=bnb_4bit
+export HERETIC_N_TRIALS=300
+heretic MODEL_NAME
+```
+
+<Tip>
+Environment variables are useful for containerized deployments or when you want to override config file settings temporarily.
+</Tip>
+
+## Help Command
+
+For a quick reference of all options:
+
+```bash
+heretic --help
+```
+
+This displays a summary of all available command-line flags with their descriptions and default values.

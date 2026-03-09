@@ -1,0 +1,221 @@
+---
+title: 'Configuration Overview'
+description: 'Learn how to configure Heretic using config files and CLI flags'
+---
+
+## Configuration Methods
+
+Heretic supports multiple ways to configure its behavior, providing flexibility for different workflows:
+
+- **CLI flags** - Pass options directly on the command line
+- **Configuration files** - Use TOML files for persistent settings
+- **Environment variables** - Set options via `HERETIC_` prefixed variables
+
+These configuration sources are processed in order of priority (highest to lowest):
+
+1. CLI flags (highest priority)
+2. Environment variables with `HERETIC_` prefix
+3. TOML configuration file
+
+<Note>
+CLI flags will override any settings in your config file or environment variables.
+</Note>
+
+## Using Configuration Files
+
+### File Location and Naming
+
+Heretic looks for a configuration file named `config.toml` in the directory where you run the command. The configuration file uses the TOML format, which is human-readable and easy to edit.
+
+<CodeGroup>
+```bash Terminal
+# Run heretic with config.toml in current directory
+heretic meta-llama/Llama-3.1-8B-Instruct
+```
+
+```toml config.toml
+# Your configuration options here
+batch_size = 64
+max_response_length = 150
+quantization = "bnb_4bit"
+```
+</CodeGroup>
+
+### Creating Your First Config File
+
+Heretic includes a default configuration file that you can use as a starting point. Copy the `config.default.toml` from the repository and rename it to `config.toml`:
+
+```bash
+# Rename the default config to use it
+cp config.default.toml config.toml
+```
+
+Then edit `config.toml` to customize the settings for your needs.
+
+## CLI Flags vs Config Files
+
+### When to Use CLI Flags
+
+CLI flags are ideal for:
+- **One-time adjustments** - Testing different settings without modifying your config file
+- **Scripting** - Automating heretic runs with different parameters
+- **Quick experiments** - Trying out a single option change
+
+<CodeGroup>
+```bash Quick Test
+# Try 4-bit quantization without editing config
+heretic Qwen/Qwen3-4B-Instruct-2507 --quantization bnb_4bit
+```
+
+```bash Evaluation
+# Evaluate a model with custom response length
+heretic google/gemma-3-12b-it \
+  --evaluate-model p-e-w/gemma-3-12b-it-heretic \
+  --max-response-length 200
+```
+</CodeGroup>
+
+### When to Use Config Files
+
+Configuration files are ideal for:
+- **Consistent workflows** - Maintaining standard settings across multiple runs
+- **Complex configurations** - Managing many options at once
+- **Documentation** - Keeping a record of settings that worked well
+- **Custom datasets** - Configuring dataset specifications with all their options
+
+## Basic Configuration Example
+
+Here's a basic configuration that enables 4-bit quantization, uses a moderate batch size, and extends the response length:
+
+<CodeGroup>
+```toml config.toml
+# Model loading configuration
+quantization = "bnb_4bit"  # Reduce VRAM usage
+device_map = "auto"        # Automatically distribute across GPUs
+
+# Performance tuning
+batch_size = 32            # Process 32 sequences at once
+max_batch_size = 64        # Don't exceed 64 when auto-detecting
+
+# Evaluation settings
+max_response_length = 150  # Generate up to 150 tokens
+print_responses = true     # Show what the model generates
+
+# Optimization parameters
+n_trials = 150             # Run 150 optimization trials
+n_startup_trials = 50      # Use 50 trials for exploration
+```
+
+```bash Usage
+# Run with the configuration above
+heretic meta-llama/Llama-3.1-8B-Instruct
+```
+</CodeGroup>
+
+<Tip>
+Start with the default configuration and adjust only the settings you need to change. The defaults are well-tuned for most use cases.
+</Tip>
+
+## Configuration Sections
+
+Heretic's configuration is organized into logical sections:
+
+<CardGroup cols={2}>
+  <Card title="Model Loading" icon="download" href="/configuration/model-loading">
+    Configure dtypes, quantization, device mapping, and memory limits
+  </Card>
+  
+  <Card title="Optimization" icon="chart-line" href="/configuration/optimization">
+    Control the optimization process, batch sizes, and abliteration parameters
+  </Card>
+  
+  <Card title="Evaluation" icon="check" href="/configuration/evaluation">
+    Set up datasets, refusal markers, and evaluation prompts
+  </Card>
+</CardGroup>
+
+## Viewing All Options
+
+To see all available configuration options and their descriptions:
+
+```bash
+heretic --help
+```
+
+This displays all CLI flags with their descriptions, default values, and data types.
+
+<Info>
+Option names in CLI flags use kebab-case (e.g., `--max-response-length`), while the same options in TOML files use snake_case (e.g., `max_response_length`).
+</Info>
+
+## Environment Variables
+
+You can also set configuration options using environment variables with the `HERETIC_` prefix:
+
+```bash
+# Set configuration via environment variables
+export HERETIC_QUANTIZATION=bnb_4bit
+export HERETIC_MAX_RESPONSE_LENGTH=200
+export HERETIC_BATCH_SIZE=32
+
+# Run heretic (will use environment variables)
+heretic Qwen/Qwen3-4B-Instruct-2507
+```
+
+<Note>
+Environment variables use uppercase with underscores (e.g., `HERETIC_MAX_RESPONSE_LENGTH`).
+</Note>
+
+## Example: Alternative Use Case
+
+Heretic can also be configured to remove "slop" (purple prose and clichés) from creative writing models. Here's an example based on `config.noslop.toml`:
+
+<CodeGroup>
+```toml config.noslop.toml
+max_response_length = 300
+
+refusal_markers = [
+    "Eldoria", "Lumina", "ethereal", "celestial",
+    "radiant", "crimson", "velvet", "twilight",
+    "symphony", "tapestry", "ancient", # ... more markers
+]
+
+system_prompt = "You are a professional writer."
+
+[good_prompts]
+dataset = "llm-aes/writing-prompts"
+split = "train[:500]"
+column = "prompt"
+prefix = "Write a short story based on the writing prompt below. Avoid literary cliches, purple prose, and flowery language.\n\nWriting prompt:"
+
+[bad_prompts]
+dataset = "llm-aes/writing-prompts"
+split = "train[:500]"
+column = "prompt"
+prefix = "Write a short story based on the writing prompt below. Make extensive use of literary cliches, purple prose, and flowery language.\n\nWriting prompt:"
+```
+
+```bash Usage
+# Copy and use the noslop configuration
+cp config.noslop.toml config.toml
+heretic Qwen/Qwen3-4B-Instruct-2507
+```
+</CodeGroup>
+
+This demonstrates how Heretic's configuration system can be adapted for different purposes beyond censorship removal.
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Model Loading" icon="microchip" href="/configuration/model-loading">
+    Configure how models are loaded into memory
+  </Card>
+  
+  <Card title="Optimization" icon="sliders" href="/configuration/optimization">
+    Fine-tune the abliteration optimization process
+  </Card>
+  
+  <Card title="Evaluation" icon="flask" href="/configuration/evaluation">
+    Set up datasets and refusal detection
+  </Card>
+</CardGroup>

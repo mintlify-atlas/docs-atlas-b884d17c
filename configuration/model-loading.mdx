@@ -1,0 +1,361 @@
+---
+title: 'Model Loading Configuration'
+description: 'Configure how Heretic loads models into memory, including dtypes, quantization, and device mapping'
+---
+
+## Overview
+
+Model loading configuration controls how Heretic loads and initializes language models. These settings affect VRAM usage, loading speed, and numerical precision.
+
+## Data Types (dtypes)
+
+The `dtypes` option specifies a list of PyTorch data types to try when loading model tensors. If loading with one dtype fails, Heretic automatically tries the next one in the list.
+
+### Configuration
+
+<CodeGroup>
+```toml config.toml
+dtypes = [
+    "auto",      # Let transformers choose (usually bfloat16)
+    "float16",   # Half precision (pre-Ampere GPUs)
+    "bfloat16",  # Brain float (better range than float16)
+    "float32",   # Full precision (requires more VRAM)
+]
+```
+
+```bash CLI
+# Override dtypes from command line
+heretic model-name --dtypes '["float16", "float32"]'
+```
+</CodeGroup>
+
+### Available dtypes
+
+<AccordionGroup>
+  <Accordion title='"auto" - Automatic selection (recommended)'>
+    Lets the transformers library choose the appropriate dtype for your hardware. In practice, this almost always resolves to `bfloat16` on modern GPUs (Ampere and newer).
+    
+    **Best for:** Most users, modern GPUs (RTX 30/40 series, A100, H100)
+  </Accordion>
+  
+  <Accordion title='"float16" - Half precision'>
+    Uses 16-bit floating point numbers, reducing memory usage by 50% compared to float32. Works on older GPUs that don't support bfloat16.
+    
+    **Best for:** Pre-Ampere GPUs (RTX 20 series, GTX 1000 series, V100)
+    
+    **Caution:** Has a smaller range than bfloat16, which can cause numerical issues in some models.
+  </Accordion>
+  
+  <Accordion title='"bfloat16" - Brain float'>
+    Google's 16-bit format that maintains the same range as float32 but with lower precision. More numerically stable than float16 for most models.
+    
+    **Best for:** Modern GPUs with bfloat16 support (Ampere and newer)
+    
+    **Note:** Not supported on pre-Ampere hardware.
+  </Accordion>
+  
+  <Accordion title='"float32" - Full precision'>
+    Standard 32-bit floating point. Highest precision but requires double the VRAM of half-precision formats.
+    
+    **Best for:** When precision is critical and you have sufficient VRAM (rare)
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+The default list tries `auto` first, then falls back to other formats if loading fails. This works well for most scenarios, so you rarely need to change it.
+</Tip>
+
+## Quantization
+
+Quantization reduces model size by using lower-precision integers to represent weights. This dramatically reduces VRAM requirements but may slightly impact quality.
+
+### Configuration
+
+<CodeGroup>
+```toml config.toml
+# No quantization (default)
+quantization = "none"
+
+# 4-bit quantization with bitsandbytes
+quantization = "bnb_4bit"
+```
+
+```bash CLI
+# Enable 4-bit quantization
+heretic model-name --quantization bnb_4bit
+```
+</CodeGroup>
+
+### Available methods
+
+<CardGroup cols={2}>
+  <Card title='"none" (default)' icon="x">
+    No quantization. Models are loaded in their native precision (determined by dtypes).
+    
+    **Best for:** When you have sufficient VRAM and want maximum quality
+  </Card>
+  
+  <Card title='"bnb_4bit"' icon="minimize">
+    4-bit quantization using bitsandbytes. Reduces VRAM usage by approximately 75% compared to float16.
+    
+    **Best for:** Running large models on consumer GPUs (e.g., 70B models on 24GB VRAM)
+  </Card>
+</CardGroup>
+
+<Note>
+Quantization requires the `bitsandbytes` library. Install it with: `pip install bitsandbytes`
+</Note>
+
+### Example: Loading a 70B model on 24GB VRAM
+
+<CodeGroup>
+```toml config.toml
+# Enable 4-bit quantization
+quantization = "bnb_4bit"
+
+# Let transformers handle device placement
+device_map = "auto"
+
+# Limit memory per device
+max_memory = {"0": "22GB", "cpu": "32GB"}
+```
+
+```bash Command
+heretic meta-llama/Llama-3.1-70B-Instruct
+```
+</CodeGroup>
+
+## Device Mapping
+
+The `device_map` option controls how the model is distributed across available devices (GPUs, CPU).
+
+### Configuration
+
+<CodeGroup>
+```toml config.toml
+# Automatic device placement (recommended)
+device_map = "auto"
+```
+
+```bash CLI
+heretic model-name --device-map auto
+```
+</CodeGroup>
+
+### Device map strategies
+
+<Tabs>
+  <Tab title='"auto" (recommended)'>
+    Automatically distributes the model across available GPUs and CPU. Accelerate analyzes the model architecture and available memory to make optimal placement decisions.
+    
+    ```toml
+    device_map = "auto"
+    ```
+    
+    This is the recommended setting for most users.
+  </Tab>
+  
+  <Tab title="Manual mapping">
+    You can manually specify which device each layer should go to by providing a dictionary mapping layer names to devices.
+    
+    ```toml
+    # Advanced: manual device mapping
+    device_map = {
+        "model.embed_tokens": 0,
+        "model.layers.0": 0,
+        "model.layers.1": 0,
+        # ... more layer mappings ...
+        "model.norm": 1,
+        "lm_head": 1
+    }
+    ```
+    
+    <Warning>
+    Manual device mapping requires deep knowledge of the model architecture. Use `"auto"` unless you have a specific reason to override.
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Memory Limits
+
+The `max_memory` option sets maximum memory allocation per device. This is useful for multi-GPU setups or when you want to reserve memory for other processes.
+
+### Configuration
+
+<CodeGroup>
+```toml config.toml
+# Limit VRAM per GPU and CPU memory
+max_memory = {"0": "20GB", "1": "20GB", "cpu": "64GB"}
+
+# Single GPU with CPU offload
+max_memory = {"0": "22GB", "cpu": "32GB"}
+```
+
+```bash CLI
+# Note: max_memory is easier to set in config file
+# CLI requires complex JSON syntax
+heretic model-name --max-memory '{"0": "20GB", "cpu": "64GB"}'
+```
+</CodeGroup>
+
+### Understanding memory limits
+
+- **GPU memory**: Specified by device index (`"0"`, `"1"`, etc.)
+- **CPU memory**: Specified as `"cpu"`
+- **Units**: Use `"GB"` (gigabytes) or `"MB"` (megabytes)
+
+<Tip>
+Leave some headroom (1-2GB) below your actual VRAM to account for activation memory during inference.
+</Tip>
+
+### Example: Dual GPU setup
+
+```toml config.toml
+# Distribute model across 2 GPUs with CPU offload
+device_map = "auto"
+max_memory = {
+    "0": "22GB",  # First GPU (leave 2GB for activations)
+    "1": "22GB",  # Second GPU
+    "cpu": "48GB" # CPU RAM for overflow
+}
+```
+
+## Trust Remote Code
+
+Some models on Hugging Face Hub require custom code to run. The `trust_remote_code` option controls whether to execute this code.
+
+### Configuration
+
+<CodeGroup>
+```toml config.toml
+# Allow models to run custom code
+trust_remote_code = true
+
+# Block custom code (default)
+trust_remote_code = false
+```
+
+```bash CLI
+heretic model-name --trust-remote-code
+```
+</CodeGroup>
+
+<Warning>
+Only enable `trust_remote_code` for models from sources you trust. Custom code can potentially execute arbitrary operations on your system.
+</Warning>
+
+### When to enable
+
+- **Required for some models**: Models like Microsoft Phi, Qwen, and others with custom architectures
+- **You trust the source**: Official model releases from reputable organizations
+- **You've reviewed the code**: Check the model's `modeling_*.py` files on Hugging Face
+
+### When to keep disabled
+
+- **Unknown sources**: Models from unverified publishers
+- **Security-critical environments**: Production systems, shared infrastructure
+- **Standard architectures**: Most Llama, Mistral, and Gemma models don't need it
+
+## Complete Example
+
+Here's a comprehensive model loading configuration for a large model on limited VRAM:
+
+<CodeGroup>
+```toml Optimized for 24GB VRAM
+# Try bfloat16 first, fall back to float16
+dtypes = ["bfloat16", "float16"]
+
+# Enable 4-bit quantization to fit larger models
+quantization = "bnb_4bit"
+
+# Automatic device placement
+device_map = "auto"
+
+# Reserve memory for activations
+max_memory = {"0": "22GB", "cpu": "32GB"}
+
+# Enable for models that need it (e.g., Qwen)
+trust_remote_code = true
+```
+
+```toml Multi-GPU Setup
+# Use automatic dtype selection
+dtypes = ["auto", "float16"]
+
+# No quantization needed with multiple GPUs
+quantization = "none"
+
+# Distribute across GPUs automatically
+device_map = "auto"
+
+# Balance load across 2x 24GB GPUs
+max_memory = {
+    "0": "22GB",
+    "1": "22GB",
+    "cpu": "64GB"
+}
+```
+
+```toml Maximum Quality
+# Try auto first, fall back to float32 for maximum precision
+dtypes = ["auto", "float32"]
+
+# No quantization for best quality
+quantization = "none"
+
+# Simple single-GPU setup
+device_map = "auto"
+
+# No memory limits (use all available VRAM)
+# max_memory is not set
+```
+</CodeGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Out of memory (OOM) errors">
+    **Solutions:**
+    1. Enable 4-bit quantization: `quantization = "bnb_4bit"`
+    2. Set `max_memory` to leave headroom for activations
+    3. Reduce `batch_size` (see [Optimization Configuration](/configuration/optimization))
+    4. Use CPU offloading with `max_memory = {"0": "20GB", "cpu": "64GB"}`
+  </Accordion>
+  
+  <Accordion title="Model fails to load with 'auto' dtype">
+    **Solution:**
+    Try specifying dtypes explicitly:
+    ```toml
+    dtypes = ["float16", "float32"]
+    ```
+  </Accordion>
+  
+  <Accordion title="bfloat16 not supported on my GPU">
+    **Solution:**
+    Your GPU is pre-Ampere. Use float16 instead:
+    ```toml
+    dtypes = ["float16", "float32"]
+    ```
+  </Accordion>
+  
+  <Accordion title="Model requires trust_remote_code">
+    **Solution:**
+    Enable it if you trust the model source:
+    ```toml
+    trust_remote_code = true
+    ```
+    Then review the model's code on Hugging Face before proceeding.
+  </Accordion>
+</AccordionGroup>
+
+## Related Configuration
+
+<CardGroup cols={2}>
+  <Card title="Optimization Settings" icon="chart-line" href="/configuration/optimization">
+    Configure batch sizes and performance tuning
+  </Card>
+  
+  <Card title="Evaluation Settings" icon="check" href="/configuration/evaluation">
+    Set up prompts and refusal detection
+  </Card>
+</CardGroup>

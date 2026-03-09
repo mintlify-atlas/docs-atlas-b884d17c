@@ -1,0 +1,114 @@
+---
+title: CLI Overview
+description: Introduction to the Heretic command-line interface
+---
+
+The Heretic CLI provides a fully automatic way to remove censorship ("safety alignment") from language models. The tool requires minimal configuration and handles the entire decensoring process from start to finish.
+
+## Basic Command Structure
+
+The simplest way to use Heretic is to provide a model identifier:
+
+```bash
+heretic Qwen/Qwen3-4B-Instruct-2507
+```
+
+You can also use the `--model` flag explicitly:
+
+```bash
+heretic --model Qwen/Qwen3-4B-Instruct-2507
+```
+
+Both HuggingFace model IDs and local paths are supported:
+
+```bash
+heretic /path/to/local/model
+```
+
+## Common Workflows
+
+### Standard Decensoring Workflow
+
+1. **Run Heretic** on your target model
+2. **Wait for optimization** - Heretic will automatically run trials to find optimal parameters
+3. **Select a trial** - Choose from Pareto-optimal results based on refusals vs KL divergence
+4. **Export the model** - Save locally, upload to HuggingFace, or test with interactive chat
+
+### Evaluation Workflow
+
+To evaluate an already-decensored model against its base:
+
+```bash
+heretic --model google/gemma-3-12b-it --evaluate-model p-e-w/gemma-3-12b-it-heretic
+```
+
+This compares the decensored model to the base model using the same evaluation metrics used during optimization.
+
+### Resume Workflow
+
+Heretic automatically checkpoints progress. If interrupted, simply re-run the same command:
+
+```bash
+heretic Qwen/Qwen3-4B-Instruct-2507
+```
+
+You'll be prompted to:
+- Continue the previous run
+- Show results from a completed run
+- Restart from scratch
+
+## Configuration Methods
+
+Heretic supports three configuration methods (in order of precedence):
+
+1. **Command-line flags**: `heretic --quantization bnb_4bit --n-trials 100 MODEL_NAME`
+2. **Environment variables**: `HERETIC_QUANTIZATION=bnb_4bit heretic MODEL_NAME`
+3. **Configuration file**: Create `config.toml` in the working directory
+
+<Tip>
+For one-off runs, use command-line flags. For repeated experiments with the same settings, use a configuration file.
+</Tip>
+
+## The Optimization Process
+
+Heretic uses a multi-stage process:
+
+1. **Hardware Detection** - Identifies GPUs and available VRAM
+2. **Model Loading** - Loads the base model with optimal dtype
+3. **Batch Size Optimization** - Benchmarks to find optimal throughput
+4. **Refusal Direction Calculation** - Analyzes model internals
+5. **Parameter Optimization** - Runs trials to minimize refusals and KL divergence
+6. **Model Export** - Saves or uploads the best result
+
+<Info>
+The entire process is fully automatic. On an RTX 3090, decensoring Llama-3.1-8B-Instruct takes approximately 45 minutes with default settings.
+</Info>
+
+## Output and Post-Processing
+
+After optimization completes, Heretic presents Pareto-optimal trials:
+
+- **Refusals**: Number of refused prompts out of 100 test cases
+- **KL Divergence**: How much the model's behavior changed (lower is better)
+
+<Warning>
+KL divergence values above 1.0 typically indicate significant damage to the model's original capabilities.
+</Warning>
+
+For each selected trial, you can:
+
+- **Save to local folder** - Export merged model or LoRA adapter
+- **Upload to HuggingFace** - Push directly to your HF account
+- **Chat with model** - Interactive testing to evaluate quality
+- **Return to menu** - Try a different trial
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Basic Usage" icon="rocket" href="/cli/basic-usage">
+    Learn common usage patterns and examples
+  </Card>
+  <Card title="CLI Options" icon="sliders" href="/cli/options">
+    Complete reference of all command-line options
+  </Card>
+</CardGroup>

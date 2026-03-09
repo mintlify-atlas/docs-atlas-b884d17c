@@ -1,0 +1,209 @@
+---
+title: Residual Vector Plots
+description: Visualize residual vectors with PaCMAP projections and animations
+---
+
+## What are Residual Vectors?
+
+Residual vectors (also called hidden states or activations) represent the internal state of a transformer model at each layer. By analyzing how these vectors differ between "harmful" and "harmless" prompts, we can identify and remove the directions associated with refusal behavior.
+
+Heretic computes residual vectors for the first output token at each transformer layer, capturing the model's initial response before generation begins.
+
+## Enabling Residual Plots
+
+To generate residual vector visualizations, use the `--plot-residuals` flag:
+
+```bash
+heretic Qwen/Qwen3-4B-Instruct-2507 --plot-residuals
+```
+
+<Warning>
+You must install Heretic with the research extra for this feature:
+```bash
+pip install -U heretic-llm[research]
+```
+</Warning>
+
+## How It Works
+
+When you run Heretic with `--plot-residuals`, the following process occurs:
+
+<Steps>
+  <Step title="Compute Residual Vectors">
+    Extract hidden states for the first output token at each transformer layer for both "harmful" and "harmless" prompts from your configured datasets.
+  </Step>
+  
+  <Step title="PaCMAP Projection">
+    Perform dimensionality reduction from high-dimensional residual space (typically thousands of dimensions) to 2D space using [PaCMAP](https://github.com/YingfanWang/PaCMAP) (Pairwise Controlled Manifold Approximation).
+  </Step>
+  
+  <Step title="Geometric Alignment">
+    Left-right align the projections of "harmful"/"harmless" residuals by their geometric medians to make projections for consecutive layers more similar. Additionally, PaCMAP is initialized with the previous layer's projections for each new layer, minimizing disruptive transitions.
+  </Step>
+  
+  <Step title="Generate PNG Images">
+    Create a scatter plot visualization for each layer, saved as a PNG file.
+  </Step>
+  
+  <Step title="Create Animation">
+    Generate an animated GIF showing how residuals transform between layers, with smooth transitions interpolated between consecutive layers.
+  </Step>
+</Steps>
+
+## PaCMAP Projection Explained
+
+PaCMAP (Pairwise Controlled Manifold Approximation) is a dimensionality reduction technique that preserves both local and global structure better than alternatives like t-SNE or UMAP. Heretic uses PaCMAP to project high-dimensional residual vectors into 2D space while maintaining the geometric relationships between "harmful" and "harmless" clusters.
+
+Key features of Heretic's PaCMAP implementation:
+
+- **Sequential initialization** - Each layer's projection is initialized with the previous layer's projection, creating smooth transitions in the animation
+- **Consistent orientation** - Projections are rotated so the geometric medians of the two clusters align horizontally across all layers
+- **CPU computation** - PaCMAP runs on CPU and can be computationally expensive for larger models
+
+<Info>
+For larger models, computing PaCMAP projections for all layers can take an hour or more. The process shows progress tracking so you can monitor its status.
+</Info>
+
+## Generated Outputs
+
+Residual plots are saved to a directory structure based on your configuration:
+
+```
+plots/
+└── ModelName_Here/
+    ├── layer_001.png
+    ├── layer_002.png
+    ├── layer_003.png
+    ├── ...
+    ├── layer_XXX.png
+    └── animation.gif
+```
+
+### PNG Files per Layer
+
+Each layer gets its own PNG file showing:
+- **Blue dots** (royalblue by default) - Residual vectors for "harmless" prompts
+- **Orange dots** (darkorange by default) - Residual vectors for "harmful" prompts
+- **Layer number** - Displayed in bottom-right corner
+- **Model name** - Displayed in bottom-left corner
+- **Title** - Configurable title at the top
+
+### Animated GIF
+
+The `animation.gif` file shows how residual vectors evolve through the transformer layers:
+- Each layer is displayed for 1 second
+- Smooth transitions between layers use 20 interpolated frames (50ms each)
+- Animation loops continuously
+- Helps visualize how the separation between "harmful" and "harmless" clusters changes across layers
+
+## Example Visualization
+
+Below is an example residual plot from the README, showing the PaCMAP projection for a specific layer:
+
+<img src="https://github.com/user-attachments/assets/981aa6ed-5ab9-48f0-9abf-2b1a2c430295" alt="Plot of residual vectors" />
+
+In this visualization, you can see:
+- Clear separation between "harmless" (blue) and "harmful" (orange) clusters
+- The refusal direction is the vector connecting the centers of these clusters
+- The quality of separation varies by layer, which informs ablation strategy
+
+## Configuration Options
+
+You can customize residual plots using options in `config.toml` or command-line flags:
+
+### Output Path
+
+```toml
+# Base path to save plots of residual vectors to
+residual_plot_path = "plots"
+```
+
+Plots are saved to `{residual_plot_path}/{model_name}/`
+
+### Plot Title
+
+```toml
+# Title placed above plots of residual vectors
+residual_plot_title = 'PaCMAP Projection of Residual Vectors for "Harmless" and "Harmful" Prompts'
+```
+
+### Matplotlib Style
+
+```toml
+# Matplotlib style sheet to use for plots of residual vectors
+residual_plot_style = "dark_background"
+```
+
+Supported styles include:
+- `dark_background` (default)
+- `classic`
+- `seaborn-v0_8`
+- Any other [Matplotlib style sheet](https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html)
+
+### Dataset Colors and Labels
+
+Customize the appearance of each dataset:
+
+```toml
+[good_prompts]
+dataset = "mlabonne/harmless_alpaca"
+split = "train[:400]"
+column = "text"
+residual_plot_label = '"Harmless" prompts'
+residual_plot_color = "royalblue"
+
+[bad_prompts]
+dataset = "mlabonne/harmful_behaviors"
+split = "train[:400]"
+column = "text"
+residual_plot_label = '"Harmful" prompts'
+residual_plot_color = "darkorange"
+```
+
+<Tip>
+Use colors that provide good contrast against your chosen Matplotlib style for better visibility.
+</Tip>
+
+## Performance Considerations
+
+Residual plotting involves significant computational overhead:
+
+1. **Memory** - All residual vectors for all prompts and layers must be stored in memory
+2. **CPU time** - PaCMAP is CPU-bound and runs sequentially through layers
+3. **Storage** - PNG files are approximately 100-200 KB each; expect 5-20 MB per model depending on layer count
+
+<Note>
+The plotting process shows two progress bars:
+1. Computing PaCMAP projections (slower, CPU-bound)
+2. Generating plots (faster, I/O-bound)
+</Note>
+
+## Use Cases
+
+### Interpretability Research
+
+Visualize how refusal mechanisms emerge and evolve through transformer layers:
+- Early layers may show little separation
+- Middle layers often show the clearest clustering
+- Late layers may show different patterns
+
+### Model Comparison
+
+Compare residual spaces across different models:
+- Architecture differences
+- Training procedure effects
+- Alignment technique impacts
+
+### Ablation Validation
+
+Generate plots before and after ablation to verify that:
+- Refusal directions are successfully suppressed
+- Overall residual structure remains intact
+- No unexpected clustering artifacts appear
+
+### Layer Selection
+
+Identify which layers have the strongest refusal signals:
+- Layers with clear separation are good ablation candidates
+- Layers with overlapping clusters may be less critical
+- Animation reveals where refusal representations first emerge

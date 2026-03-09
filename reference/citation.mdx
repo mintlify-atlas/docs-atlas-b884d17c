@@ -1,0 +1,238 @@
+---
+title: Citation & Acknowledgments
+description: How to cite Heretic and acknowledgments to prior research
+---
+
+If you use Heretic in your research or projects, please cite it appropriately and acknowledge the foundational work that made it possible.
+
+## Citing Heretic
+
+If you use Heretic for your research, please cite it using the following BibTeX entry:
+
+```bibtex
+@misc{heretic,
+  author = {Weidmann, Philipp Emanuel},
+  title = {Heretic: Fully automatic censorship removal for language models},
+  year = {2025},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/p-e-w/heretic}}
+}
+```
+
+### Plain Text Citation
+
+For non-academic contexts:
+
+> Weidmann, P. E. (2025). Heretic: Fully automatic censorship removal for language models. GitHub repository. https://github.com/p-e-w/heretic
+
+## Academic References
+
+Heretic builds upon significant prior research in interpretability and safety alignment removal:
+
+### Foundational Papers
+
+<AccordionGroup>
+  <Accordion title="Arditi et al. (2024) - Original Abliteration Paper">
+    **Refusal in Language Models Is Mediated by a Single Direction**
+
+    This paper introduced the concept of "abliteration" - removing refusal behaviors by orthogonalizing model weights with respect to a computed "refusal direction."
+
+    **Citation:**
+    ```bibtex
+    @article{arditi2024refusal,
+      title={Refusal in Language Models Is Mediated by a Single Direction},
+      author={Arditi, Andy and Obsterheide, Oscar and Lam, Avery and Qi, Jiaxin and
+              Morrison, Aaron and Safeian, Aaquib and Garriga-Alonso, Adri{\`a} and
+              Duvenaud, David},
+      journal={arXiv preprint arXiv:2406.11717},
+      year={2024}
+    }
+    ```
+
+    **Paper:** [arxiv.org/abs/2406.11717](https://arxiv.org/abs/2406.11717)
+
+    **Key contributions:**
+    - Identified that refusal behaviors in LLMs are mediated by a consistent direction in activation space
+    - Showed that orthogonalizing weights with respect to this direction removes refusal
+    - Demonstrated the approach preserves model capabilities on harmless prompts
+  </Accordion>
+
+  <Accordion title="Lai (2025) - Projected Abliteration">
+    **Jim Lai's Extensions to Abliteration**
+
+    Jim Lai (grimjim) developed two important extensions to the original abliteration technique:
+
+    ### Projected Abliteration
+
+    Adjusts refusal directions to only subtract the component orthogonal to the "good" direction, preserving more of the model's intended behavior.
+
+    **Article:** [Projected Abliteration](https://huggingface.co/blog/grimjim/projected-abliteration)
+
+    **Implementation in Heretic:**
+    ```python
+    # From main.py:448-457
+    if settings.orthogonalize_direction:
+        # Implements projected abliteration
+        good_directions = F.normalize(good_means, p=2, dim=1)
+        projection_vector = torch.sum(
+            refusal_directions * good_directions, dim=1
+        )
+        refusal_directions = (
+            refusal_directions - projection_vector.unsqueeze(1) * good_directions
+        )
+        refusal_directions = F.normalize(refusal_directions, p=2, dim=1)
+    ```
+
+    ### Norm-Preserving Biprojected Abliteration
+
+    Further refinement that preserves the norm of activations during abliteration.
+
+    **Article:** [Norm-Preserving Biprojected Abliteration](https://huggingface.co/blog/grimjim/norm-preserving-biprojected-abliteration)
+
+    **Key contributions:**
+    - Better preservation of model capabilities
+    - Reduced side effects from abliteration
+    - Improved balance between refusal removal and intelligence retention
+  </Accordion>
+
+  <Accordion title="Labonne - AutoAbliteration & Practical Implementations">
+    **Maxime Labonne's Contributions**
+
+    Maxime Labonne has been a pioneer in practical abliteration implementations and has shared multiple high-quality abliterated models.
+
+    ### AutoAbliteration
+
+    An implementation exploring automation of the abliteration process.
+
+    **Article:** [AutoAbliteration](https://huggingface.co/posts/mlabonne/714992455492422)
+
+    ### Variable Ablation Weights
+
+    Labonne's work on [gemma-3-12b-it-abliterated-v2](https://huggingface.co/mlabonne/gemma-3-12b-it-abliterated-v2) explored using non-constant ablation weights across layers, which inspired Heretic's flexible weight kernel approach.
+
+    ### Educational Content
+
+    **Article:** [Abliteration: Making LLMs Say Anything](https://huggingface.co/blog/mlabonne/abliteration)
+
+    This comprehensive guide helped popularize abliteration techniques and provided practical insights that informed Heretic's development.
+  </Accordion>
+</AccordionGroup>
+
+## Acknowledgments
+
+The development of Heretic was informed by the research and implementations listed above, as well as:
+
+### Prior Implementations
+
+Several publicly available implementations of abliteration techniques provided inspiration and insights:
+
+- **[AutoAbliteration](https://huggingface.co/posts/mlabonne/714992455492422)** by Maxime Labonne
+- **[abliterator.py](https://github.com/FailSpy/abliterator)** by FailSpy
+- **[wassname's Abliterator](https://github.com/wassname/abliterator)** by wassname
+- **[ErisForge](https://github.com/Tsadoq/ErisForge)** by Tsadoq
+- **[Removing refusals with HF Transformers](https://github.com/Sumandora/remove-refusals-with-transformers)** by Sumandora
+- **[deccp](https://github.com/AUGMXNT/deccp)** by AUGMXNT
+
+<Info>
+**Note:** Heretic was written from scratch and does not reuse code from any of these projects. However, examining these implementations provided valuable insights into practical considerations and edge cases.
+</Info>
+
+### Key Technologies
+
+Heretic leverages several excellent open-source projects:
+
+- **[Optuna](https://optuna.org/)** - Hyperparameter optimization framework with TPE sampler
+- **[PyTorch](https://pytorch.org/)** - Deep learning framework
+- **[Hugging Face Transformers](https://huggingface.co/transformers)** - Model loading and inference
+- **[bitsandbytes](https://github.com/TimDettmers/bitsandbytes)** - Quantization support
+- **[Rich](https://rich.readthedocs.io/)** - Terminal formatting and progress display
+
+## License
+
+Heretic is free and open-source software released under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+
+### What This Means
+
+**You are free to:**
+- Use Heretic for any purpose (personal, commercial, research)
+- Study how Heretic works
+- Modify Heretic to suit your needs
+- Distribute Heretic and your modifications
+
+**Under these conditions:**
+- You must license your modifications under AGPL-3.0
+- You must provide source code for any modifications you distribute
+- If you run a modified version as a network service, you must provide the source code to users
+- You must preserve copyright and license notices
+
+### Models Generated by Heretic
+
+<Warning>
+**Important:** The AGPL-3.0 license applies to Heretic itself (the software), **not** to models you process with Heretic.
+
+Models you create using Heretic:
+- Inherit the license of their **base model**
+- Are **not** covered by AGPL-3.0
+- Can be shared under the base model's license terms
+
+Always respect the original model's license when sharing processed models.
+</Warning>
+
+### Full License Text
+
+```
+Copyright © 2025-2026  Philipp Emanuel Weidmann <pew@worldwidemann.com> + contributors
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+```
+
+**Full license text:** [GNU AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.html)
+
+### Contributing
+
+**By contributing to this project, you agree to release your contributions under the same license (AGPL-3.0).**
+
+Contributions are welcome! See the [GitHub repository](https://github.com/p-e-w/heretic) for:
+- Issue tracking
+- Pull request guidelines
+- Development setup instructions
+
+## Contact
+
+**Author:** Philipp Emanuel Weidmann
+
+**Email:** pew@worldwidemann.com
+
+**Project:** [github.com/p-e-w/heretic](https://github.com/p-e-w/heretic)
+
+**Community:** [Discord](https://discord.gg/gdXc48gSyT)
+
+## Recognition
+
+Heretic has been recognized by the community:
+
+- **#1 Repository of the Day** on TrendShift
+- Over 1,000 community-created models on Hugging Face
+- Active community on Discord with ongoing development and support
+
+<CardGroup cols={2}>
+  <Card title="Star on GitHub" icon="star" href="https://github.com/p-e-w/heretic">
+    Show your support by starring the repository
+  </Card>
+
+  <Card title="Join Discord" icon="discord" href="https://discord.gg/gdXc48gSyT">
+    Connect with the community and get involved
+  </Card>
+</CardGroup>

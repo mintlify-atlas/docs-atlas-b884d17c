@@ -1,0 +1,338 @@
+---
+title: Directional Ablation
+description: Deep dive into abliteration, refusal directions, and matrix orthogonalization
+icon: "compass"
+---
+
+## What is Abliteration?
+
+**Abliteration** (portmanteau of "ablation" + "obliterate") refers to a technique for removing specific behavioral patterns from language models by identifying and suppressing directional components in the model's internal representations. In the context of censorship removal, abliteration targets **refusal directions** — vectors in activation space that correspond to the model refusing to answer prompts.
+
+<Info>
+Directional ablation was introduced by [Arditi et al. (2024)](https://arxiv.org/abs/2406.11717) and further refined by Jim Lai in his work on [projected abliteration](https://huggingface.co/blog/grimjim/projected-abliteration) and [norm-preserving biprojected abliteration](https://huggingface.co/blog/grimjim/norm-preserving-biprojected-abliteration).
+</Info>
+
+## Refusal Directions
+
+### Computing Refusal Directions
+
+Refusal directions are computed **per-layer** as the difference between mean residual vectors for "harmful" and "harmless" prompts:
+
+<Steps>
+  <Step title="Generate Residuals">
+    For each prompt in both datasets:
+    - Tokenize and pass through the model
+    - Extract hidden states (residual vectors) at the **first output token position**
+    - Store residuals for each layer: `residuals[prompt, layer, component]`
+  </Step>
+  
+  <Step title="Compute Mean Residuals">
+    Calculate the mean residual vector for each layer:
+    ```python
+    good_means = good_residuals.mean(dim=0)  # [layer, hidden_dim]
+    bad_means = bad_residuals.mean(dim=0)    # [layer, hidden_dim]
+    ```
+  </Step>
+  
+  <Step title="Calculate Refusal Directions">
+    Compute normalized difference as the refusal direction:
+    ```python
+    refusal_directions = F.normalize(
+        bad_means - good_means, 
+        p=2, 
+        dim=1
+    )
+    ```
+    This produces one refusal direction vector per layer.
+  </Step>
+</Steps>
+
+### Why First Token Position?
+
+Heretic analyzes residuals at the **first generated token** rather than the prompt tokens because:
+
+- The first output token is where the model "decides" whether to refuse
+- It captures the model's immediate response to the prompt
+- It's consistent across prompts of different lengths
+
+<Note>
+**Implementation Detail**: Residuals are upcast to `torch.float32` to avoid precision issues with `bfloat16` or range problems with `float16` during vector operations (see `model.py:650-652`).
+</Note>
+
+### Geometric Properties
+
+Refusal directions have interesting geometric properties that can be analyzed using the `--print-residual-geometry` flag:
+
+- **Cosine Similarity**: Measures alignment between good/bad/refusal directions
+- **L2 Norms**: Shows magnitude of residuals and refusal directions across layers
+- **Silhouette Coefficient**: Quantifies separation between "harmful" and "harmless" clusters
+
+<CodeGroup>
+```bash CLI Usage
+heretic Qwen/Qwen3-4B-Instruct-2507 --print-residual-geometry
+```
+
+```python analyzer.py:67-100
+# Compute geometric properties
+g = self.good_residuals.mean(dim=0)
+b = self.bad_residuals.mean(dim=0)
+r = b - g  # Refusal direction
+
+# Compute geometric median (more robust than mean)
+g_star = torch.stack([
+    compute_geometric_median(
+        self.good_residuals[:, layer_index, :].detach().cpu()
+    ).median
+    for layer_index in range(len(self.model.get_layers()) + 1)
+])
+
+# Calculate cosine similarities
+g_b_similarities = F.cosine_similarity(g, b, dim=-1)
+g_r_similarities = F.cosine_similarity(g, r, dim=-1)
+b_r_similarities = F.cosine_similarity(b, r, dim=-1)
+
+# Calculate L2 norms
+g_norms = LA.vector_norm(g, dim=-1)
+b_norms = LA.vector_norm(b, dim=-1)
+r_norms = LA.vector_norm(r, dim=-1)
+```
+</CodeGroup>
+
+## Matrix Orthogonalization
+
+### Basic Directional Ablation
+
+Directional ablation works by **orthogonalizing weight matrices** with respect to the refusal direction. This prevents the refusal direction from being expressed in the output of matrix multiplications.
+
+For a weight matrix **W** and refusal direction **v**, the goal is to compute a delta **ΔW** such that:
+
+```
+(W + ΔW) · v ≈ 0
+```
+
+The solution is:
+
+```
+ΔW = -λ · v · (v^T · W)
+```
+
+Where:
+- **λ** (lambda) is the ablation weight (typically 0.8-1.5)
+- **v** is the normalized refusal direction
+- **v^T · W** projects W onto v
+
+### LoRA-Based Implementation
+
+Heretic implements abliteration using **LoRA adapters** rather than directly modifying weights. This has several advantages:
+
+- **Fast Reset**: Can reset to identity by zeroing adapter weights
+- **Memory Efficient**: Only stores low-rank deltas
+- **Quantization Compatible**: Works with 4-bit quantized models
+
+<CodeGroup>
+```python model.py:457-540
+# LoRA abliteration: delta W = -lambda * v * (v^T W)
+# Decompose as: lora_B = -lambda * v, lora_A = v^T W
+
+v = layer_refusal_direction.to(module.weight.device)
+
+# Get W (dequantize if necessary)
+base_weight = module.base_layer.weight
+if quant_state is None:
+    W = base_weight.to(torch.float32)
+else:
+    # 4-bit quantization support
+    W = bnb.functional.dequantize_4bit(
+        base_weight.data, quant_state
+    ).to(torch.float32)
+
+# Flatten to (out_features, in_features)
+W = W.view(W.shape[0], -1)
+
+# Calculate lora_A = v^T W (v is [d_out,], W is [d_out, d_in])
+lora_A = (v @ W).view(1, -1)
+
+# Calculate lora_B = -weight * v
+lora_B = (-weight * v).view(-1, 1)
+
+# Assign to adapters
+module.lora_A["default"].weight.data = lora_A.to(weight_A.dtype)
+module.lora_B["default"].weight.data = lora_B.to(weight_B.dtype)
+```
+
+```toml config.default.toml
+# LoRA rank configuration
+# Rank 1 is sufficient for basic directional ablation
+# Higher ranks needed for full row normalization
+full_normalization_lora_rank = 3
+```
+</CodeGroup>
+
+## Which Components Are Modified?
+
+Heretic abliterates two types of transformer components:
+
+### 1. Attention Output Projection (`attn.o_proj`)
+
+The output projection that combines attention heads:
+
+```python
+# Standard self-attention (most models)
+layer.self_attn.o_proj
+
+# Linear attention (Qwen3.5 MoE hybrid layers)
+layer.linear_attn.out_proj
+```
+
+### 2. MLP Down Projection (`mlp.down_proj`)
+
+The second linear layer in the MLP block:
+
+```python
+# Dense models (Llama, Qwen, Gemma, etc.)
+layer.mlp.down_proj
+
+# MoE models - Qwen3 style
+for expert in layer.mlp.experts:
+    expert.down_proj
+
+# MoE models - Phi-3.5-MoE style
+for expert in layer.block_sparse_moe.experts:
+    expert.w2
+
+# Granite MoE Hybrid - attention layers
+layer.shared_mlp.output_linear
+
+# Granite MoE Hybrid - MoE layers
+for expert in layer.moe.experts:
+    expert.output_linear
+```
+
+<Warning>
+Heretic modifies **output projections** (where information is combined/reduced) rather than input projections. This is critical because:
+- Output projections are where the model "writes" to the residual stream
+- Abliteration prevents refusal information from being written
+- Input projections would require different mathematical treatment
+</Warning>
+
+## Advanced Techniques
+
+### Projected Abliteration
+
+Implements the technique from [Jim Lai's blog post](https://huggingface.co/blog/grimjim/projected-abliteration):
+
+```python main.py:448-457
+if settings.orthogonalize_direction:
+    # Only subtract the component orthogonal to good direction
+    good_directions = F.normalize(good_means, p=2, dim=1)
+    projection_vector = torch.sum(
+        refusal_directions * good_directions, dim=1
+    )
+    refusal_directions = (
+        refusal_directions 
+        - projection_vector.unsqueeze(1) * good_directions
+    )
+    refusal_directions = F.normalize(refusal_directions, p=2, dim=1)
+```
+
+<CodeGroup>
+```toml Enable in Config
+orthogonalize_direction = true
+```
+</CodeGroup>
+
+### Row Normalization
+
+Preserves the magnitude of weight matrix rows during abliteration:
+
+- **`none`**: Basic abliteration (default)
+- **`pre`**: Compute LoRA relative to row-normalized weights
+- **`full`**: Approximate [norm-preserving biprojected abliteration](https://huggingface.co/blog/grimjim/norm-preserving-biprojected-abliteration)
+
+<CodeGroup>
+```python model.py:490-532
+if self.settings.row_normalization != RowNormalization.NONE:
+    # Keep original norms
+    W_org = W
+    W_row_norms = LA.vector_norm(W, dim=1, keepdim=True)
+    W = F.normalize(W, p=2, dim=1)
+
+if self.settings.row_normalization == RowNormalization.PRE:
+    # Scale LoRA to work with original magnitudes
+    lora_B = W_row_norms * lora_B
+    
+elif self.settings.row_normalization == RowNormalization.FULL:
+    # Apply abliteration and renormalize
+    W = W + lora_B @ lora_A
+    W = F.normalize(W, p=2, dim=1)
+    W = W * W_row_norms  # Restore original norms
+    W = W - W_org
+    
+    # Low-rank SVD approximation
+    r = self.peft_config.r
+    U, S, Vh = torch.svd_lowrank(W, q=2*r+4, niter=6)
+    U = U[:, :r]
+    S = S[:r]
+    Vh = Vh[:, :r].T
+    
+    # Split singular values between components
+    sqrt_S = torch.sqrt(S)
+    lora_B = U @ torch.diag(sqrt_S)
+    lora_A = torch.diag(sqrt_S) @ Vh
+```
+
+```toml config.default.toml
+row_normalization = "none"  # Options: "none", "pre", "full"
+full_normalization_lora_rank = 3
+```
+</CodeGroup>
+
+### Winsorization
+
+Clamps extreme activation values to reduce the impact of "massive activations":
+
+```python model.py:654-664
+if 0 <= self.settings.winsorization_quantile < 1:
+    abs_residuals = torch.abs(residuals)
+    thresholds = torch.quantile(
+        abs_residuals,
+        self.settings.winsorization_quantile,
+        dim=2,
+        keepdim=True,
+    )
+    return torch.clamp(residuals, -thresholds, thresholds)
+```
+
+<CodeGroup>
+```toml config.default.toml
+# Clamp to 95th percentile (disabled by default)
+winsorization_quantile = 0.95
+```
+</CodeGroup>
+
+## Academic References
+
+Heretic's abliteration implementation is based on:
+
+1. **Arditi et al. (2024)** - [Refusal in Language Models Is Mediated by a Single Direction](https://arxiv.org/abs/2406.11717)
+   - Original abliteration paper
+   - Identifies refusal as a directional phenomenon
+
+2. **Lai (2025)** - Projected Abliteration
+   - [Blog Post 1: Projected Abliteration](https://huggingface.co/blog/grimjim/projected-abliteration)
+   - Orthogonalizes refusal direction relative to "harmless" direction
+
+3. **Lai (2025)** - Norm-Preserving Biprojected Abliteration
+   - [Blog Post 2: Norm-Preserving](https://huggingface.co/blog/grimjim/norm-preserving-biprojected-abliteration)
+   - Preserves row magnitudes for better model preservation
+
+## Related Topics
+
+<CardGroup cols={2}>
+  <Card title="How Heretic Works" icon="diagram-project" href="/concepts/how-it-works">
+    System architecture and workflow overview
+  </Card>
+  <Card title="Optimization Process" icon="chart-line" href="/concepts/optimization">
+    Parameter optimization and weight kernels
+  </Card>
+</CardGroup>

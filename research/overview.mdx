@@ -1,0 +1,73 @@
+---
+title: Research Features Overview
+description: Interpretability research tools for analyzing model internals
+---
+
+## Purpose
+
+In addition to its primary function of removing model censorship, Heretic provides features designed to support research into the semantics of model internals (interpretability). These tools help researchers and practitioners understand how refusal mechanisms work in language models by visualizing and analyzing residual vectors across transformer layers.
+
+## Installation
+
+To use research features, you need to install Heretic with the optional `research` extra:
+
+```bash
+pip install -U heretic-llm[research]
+```
+
+## Research Dependencies
+
+The research extra installs the following additional packages:
+
+- **geom-median** (~0.1) - For computing geometric medians of residual vectors
+- **imageio** (~2.37) - For generating animated GIFs from residual plots
+- **matplotlib** (~3.10) - For creating visualizations of residual vectors
+- **numpy** (~2.2) - For numerical operations on residual data
+- **pacmap** (~0.8) - For PaCMAP dimensionality reduction projections
+- **scikit-learn** (~1.7) - For computing clustering metrics like silhouette coefficients
+
+These dependencies enable advanced visualization and analysis capabilities that are not required for basic censorship removal operations.
+
+## Use Cases
+
+Heretic's research features are valuable for:
+
+- **Interpretability Research** - Understanding how models represent "harmful" vs "harmless" concepts in their hidden states
+- **Direction Analysis** - Examining the geometric properties of refusal directions across layers
+- **Ablation Validation** - Visualizing how residual spaces change before and after directional ablation
+- **Model Comparison** - Comparing refusal mechanisms across different model architectures
+- **Layer Behavior** - Studying how representations evolve through transformer layers
+
+## Available Research Tools
+
+Heretic provides two primary research capabilities:
+
+<CardGroup cols={2}>
+  <Card title="Residual Vector Plots" icon="chart-scatter" href="/research/residual-plots">
+    Generate PaCMAP projections showing how residual vectors cluster for "harmful" and "harmless" prompts across layers
+  </Card>
+  <Card title="Geometry Analysis" icon="table" href="/research/geometry-analysis">
+    Print detailed metrics about cosine similarities, norms, and clustering quality of residual vectors
+  </Card>
+</CardGroup>
+
+<Note>
+Research features require additional computational resources. PaCMAP projections for larger models can take an hour or more to compute on CPU.
+</Note>
+
+## Quick Start
+
+After installing the research dependencies, you can enable research features via command-line flags:
+
+```bash
+# Generate residual plots
+heretic Qwen/Qwen3-4B-Instruct-2507 --plot-residuals
+
+# Print residual geometry metrics
+heretic Qwen/Qwen3-4B-Instruct-2507 --print-residual-geometry
+
+# Use both features together
+heretic Qwen/Qwen3-4B-Instruct-2507 --plot-residuals --print-residual-geometry
+```
+
+For detailed configuration options, see the individual tool pages or the [configuration reference](/configuration/overview).

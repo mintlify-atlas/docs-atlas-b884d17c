@@ -1,0 +1,376 @@
+---
+title: Troubleshooting
+description: Common issues and solutions when using Heretic
+---
+
+This guide covers common problems you might encounter when using Heretic and how to resolve them.
+
+## Common Issues
+
+<AccordionGroup>
+  <Accordion title="Out of Memory (OOM) Errors">
+    **Symptoms:**
+    - `CUDA out of memory` errors
+    - `RuntimeError: [enforce fail at alloc_cpu.cpp]`
+    - System freezes or crashes during processing
+
+    **Solutions:**
+
+    ### Enable Quantization
+
+    Use 4-bit quantization to drastically reduce VRAM requirements:
+
+    ```bash
+    heretic --quantization bnb_4bit your-model-name
+    ```
+
+    Or in `config.toml`:
+
+    ```toml
+    quantization = "bnb_4bit"
+    ```
+
+    This can reduce VRAM usage by approximately 4x compared to full precision loading.
+
+    ### Reduce Batch Size
+
+    If you've manually set a batch size, reduce it:
+
+    ```bash
+    heretic --batch-size 1 your-model-name
+    ```
+
+    By default (batch_size = 0), Heretic automatically determines the optimal batch size, so only set this if you're experiencing issues.
+
+    ### Close Other Applications
+
+    Free up VRAM by closing other GPU-intensive applications:
+    - Web browsers with hardware acceleration
+    - Other AI/ML applications
+    - Games or 3D applications
+
+    ### Use a Smaller Model
+
+    If memory is severely constrained, try a smaller variant of your target model:
+    - 7B/8B models instead of 13B
+    - 13B models instead of 30B/70B
+
+    <Warning>
+    When merging quantized models to full precision, you need approximately 3x the parameter count in GB of **system RAM** (not VRAM). For example, a 27B model requires ~80GB RAM, and a 70B model requires ~200GB RAM. This can cause system freezes if you run out of memory.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="Model Loading Failures">
+    **Symptoms:**
+    - `ValueError: Unable to load model`
+    - `OSError: Can't load tokenizer`
+    - `RuntimeError: Error(s) in loading state_dict`
+
+    **Solutions:**
+
+    ### Check Model Path
+
+    Verify the model name or path is correct:
+
+    ```bash
+    # For Hugging Face models
+    heretic organization/model-name
+
+    # For local models
+    heretic /path/to/local/model
+    ```
+
+    ### Install Trust Remote Code
+
+    Some models require custom code. Heretic enables `trust_remote_code=True` by default, but ensure you trust the model source.
+
+    ### Check Internet Connection
+
+    When loading from Hugging Face:
+    - Ensure you have a stable internet connection
+    - Large models may take time to download
+    - Consider downloading the model first with `huggingface-cli`
+
+    ### Try Different Dtype
+
+    If the model fails to load with the default dtype, Heretic has fallback mechanisms. You can also explicitly set the dtype:
+
+    ```bash
+    # This is handled automatically, but you can check config.toml for dtype options
+    ```
+
+    The model loading code (from main.py:76-101) attempts to estimate memory requirements and will warn you if insufficient resources are detected.
+  </Accordion>
+
+  <Accordion title="Merge Warnings and Quantization Issues">
+    **Symptoms:**
+    - Warnings about CPU merging and system RAM
+    - `[yellow]WARNING: CPU merging requires dequantizing...`
+    - System becomes unresponsive during merge
+
+    **Understanding the Warning:**
+
+    When you use quantization (`bnb_4bit`), the model is loaded in 4-bit precision. To save or upload the final model, it needs to be merged back to full precision, which requires loading the entire base model into **system RAM**.
+
+    From the source code (main.py:66-72):
+    ```python
+    print("[yellow]WARNING: CPU merging requires dequantizing 
+          the entire model to system RAM.[/]")
+    print("[yellow]This can lead to system freezes 
+          if you run out of memory.[/]")
+    ```
+
+    **Memory Requirements:**
+
+    Rule of thumb: You need approximately **3x the parameter count in GB of RAM**
+
+    Examples:
+    - 7B model: ~21GB RAM
+    - 13B model: ~39GB RAM  
+    - 27B model: ~80GB RAM
+    - 70B model: ~200GB RAM
+
+    **Solutions:**
+
+    ### Option 1: Skip Merging
+
+    When prompted, choose to cancel the save/upload operation:
+    - Test the model using the built-in chat feature instead
+    - This doesn't require merging
+
+    ### Option 2: Ensure Sufficient RAM
+
+    Before attempting to merge:
+    - Close all unnecessary applications
+    - Check available RAM with `free -h` (Linux) or Task Manager (Windows)
+    - If using a cloud instance, upgrade to one with sufficient RAM
+
+    ### Option 3: Use Non-Quantized Loading
+
+    If you have sufficient VRAM, load the model without quantization:
+
+    ```bash
+    heretic your-model-name
+    # Omit the --quantization flag
+    ```
+
+    This way, merging is not required and the model can be saved directly.
+
+    <Info>
+    Heretic will show you an estimated RAM requirement before merging (main.py:87-92). Pay attention to this estimate.
+    </Info>
+  </Accordion>
+
+  <Accordion title="Slow Performance or System Freeze">
+    **Symptoms:**
+    - Processing takes much longer than expected
+    - System becomes unresponsive
+    - No progress for extended periods
+
+    **Solutions:**
+
+    ### Verify GPU is Being Used
+
+    Check that Heretic detected your GPU:
+
+    ```bash
+    heretic your-model-name
+    # Look for "Detected N CUDA device(s)" in the output
+    ```
+
+    If you see `No GPU or other accelerator detected`, ensure:
+    - CUDA drivers are installed correctly
+    - PyTorch was installed with CUDA support
+    - Your GPU is visible to PyTorch: `python -c "import torch; print(torch.cuda.is_available())"`
+
+    ### CPU Processing Warning
+
+    If no GPU is detected (main.py:211-213):
+    ```
+    [bold yellow]No GPU or other accelerator detected. 
+    Operations will be slow.[/]
+    ```
+
+    CPU processing is functional but will be **significantly slower** (potentially hours to days for larger models).
+
+    ### Batch Size Determination
+
+    During startup, Heretic benchmarks your system to find the optimal batch size (main.py:332-376). This is normal and should take 1-2 minutes. You'll see:
+
+    ```
+    Determining optimal batch size...
+    * Trying batch size 1... Ok (X tokens/s)
+    * Trying batch size 2... Ok (Y tokens/s)
+    ...
+    ```
+
+    ### System Freeze During Merge
+
+    If your system freezes when merging:
+    - You've likely run out of RAM (see "Merge Warnings" above)
+    - Force restart your system
+    - Next time, either skip merging or ensure sufficient RAM
+  </Accordion>
+
+  <Accordion title="Evaluation or Optimization Issues">
+    **Symptoms:**
+    - All trials show similar results
+    - KL divergence is unexpectedly high
+    - Refusal counts don't decrease
+
+    **Solutions:**
+
+    ### Check Prompt Datasets
+
+    Heretic uses default datasets for "good" and "bad" prompts. If results are unexpected, you can specify custom datasets:
+
+    ```bash
+    heretic --good-prompts.dataset your/dataset --bad-prompts.dataset your/harmful/dataset your-model-name
+    ```
+
+    ### Verify Model is Actually Censored
+
+    Some models have minimal or no censorship to begin with. Check the baseline refusal rate:
+    - If the original model already has 0-5 refusals, there's little to improve
+    - Try a different model known to have safety alignment
+
+    ### Trial Count
+
+    By default, Heretic runs a limited number of trials. For better optimization:
+
+    ```bash
+    heretic --n-trials 50 your-model-name
+    # Default is typically 20
+    ```
+
+    ### Study Checkpoints
+
+    Heretic saves progress to a checkpoint file. If you want to start fresh:
+
+    ```bash
+    # Delete checkpoint files in the study checkpoint directory
+    rm ~/.cache/heretic/studies/*.jsonl
+    # Or specify a different checkpoint directory
+    heretic --study-checkpoint-dir /tmp/heretic-studies your-model-name
+    ```
+  </Accordion>
+
+  <Accordion title="Hugging Face Upload Failures">
+    **Symptoms:**
+    - `HTTPError: 401 Unauthorized`
+    - `Repository not found`
+    - Upload stalls or times out
+
+    **Solutions:**
+
+    ### Authentication
+
+    Ensure you have a valid Hugging Face token:
+
+    ```bash
+    # Login via CLI (saves token)
+    huggingface-cli login
+
+    # Or provide token when Heretic prompts you
+    ```
+
+    Your token needs **write** permissions to create repositories.
+
+    ### Repository Names
+
+    Valid repository names:
+    - Must contain only alphanumeric characters, hyphens, and underscores
+    - Format: `username/model-name`
+    - Example: `p-e-w/gemma-3-12b-it-heretic`
+
+    ### Network Issues
+
+    For large models:
+    - Ensure stable internet connection
+    - Upload may take 30+ minutes for large models
+    - Consider using a wired connection instead of WiFi
+
+    ### Disk Space
+
+    Verify you have sufficient disk space:
+    - The merged model temporarily uses local disk
+    - Need at least 2x the model size in free space
+  </Accordion>
+
+  <Accordion title="Configuration Errors">
+    **Symptoms:**
+    - `Configuration contains N errors`
+    - `ValidationError`
+    - Parameter warnings
+
+    **Solutions:**
+
+    ### View Help
+
+    See all available options:
+
+    ```bash
+    heretic --help
+    ```
+
+    ### Check Configuration File
+
+    If using a config file, verify syntax:
+
+    ```bash
+    # See the default configuration
+    heretic --help
+    # Or check config.default.toml for all options
+    ```
+
+    ### Common Parameter Issues
+
+    From main.py:162-172, validation errors show:
+    - Which parameter is invalid
+    - What the error is
+
+    Common mistakes:
+    - Incorrect data types (string instead of number)
+    - Invalid enum values (e.g., wrong quantization method)
+    - Missing required parameters
+
+    Example error output:
+    ```
+    Configuration contains 1 errors:
+    quantization: Input should be 'none' or 'bnb_4bit'
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Getting More Help
+
+If you encounter an issue not covered here:
+
+<CardGroup cols={2}>
+  <Card title="GitHub Issues" icon="github" href="https://github.com/p-e-w/heretic/issues">
+    Report bugs or request features on the official repository
+  </Card>
+
+  <Card title="Discord Community" icon="discord" href="https://discord.gg/gdXc48gSyT">
+    Get help from the community in real-time
+  </Card>
+</CardGroup>
+
+## Debug Mode
+
+For developers and advanced troubleshooting, you can enable Python tracebacks:
+
+```bash
+PYTHONTRACEBACK=1 heretic your-model-name
+```
+
+Heretic uses Rich for traceback formatting (main.py:922), which provides detailed error information.
+
+<Tip>
+When reporting issues, include:
+- Heretic version (`heretic --version` output)
+- GPU model and VRAM
+- System RAM
+- Model name/size you're processing
+- Full error message or unexpected behavior description
+</Tip>

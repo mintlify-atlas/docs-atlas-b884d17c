@@ -1,0 +1,243 @@
+---
+title: Quantization
+description: Reduce VRAM requirements with 4-bit quantization
+---
+
+Heretic supports model quantization using bitsandbytes, which can drastically reduce the amount of VRAM required to process models. This is particularly useful for running larger models on consumer GPUs.
+
+## What is Quantization?
+
+Quantization reduces the precision of model weights from their original format (typically bfloat16 or float32) to lower bit representations. This significantly reduces memory requirements while maintaining acceptable model performance.
+
+Heretic uses **bitsandbytes 4-bit quantization** (NF4) with double quantization, which provides an excellent balance between memory savings and model quality.
+
+## Why Use Quantization?
+
+<CardGroup cols={2}>
+  <Card title="Reduced VRAM" icon="memory">
+    Process models up to 4x larger on the same hardware
+  </Card>
+  <Card title="Faster Experimentation" icon="clock">
+    Run more trials with limited GPU resources
+  </Card>
+  <Card title="Same Quality" icon="check">
+    Produces comparable decensored models to full precision
+  </Card>
+  <Card title="Cost Savings" icon="dollar-sign">
+    Use smaller, cheaper GPU instances for processing
+  </Card>
+</CardGroup>
+
+## Enabling Quantization
+
+Quantization can be enabled via configuration file or command line:
+
+<CodeGroup>
+
+```toml config.toml
+# Quantization method to use when loading the model. Options:
+# "none" (no quantization),
+# "bnb_4bit" (4-bit quantization using bitsandbytes).
+quantization = "bnb_4bit"
+```
+
+```bash Command Line
+heretic --quantization bnb_4bit Qwen/Qwen3-4B-Instruct-2507
+```
+
+</CodeGroup>
+
+## Memory Requirements
+
+### Without Quantization
+
+Full precision models require approximately:
+- **bfloat16/float16**: ~2 bytes per parameter
+- **Rule of thumb**: Parameter count (in billions) × 2 = GB of VRAM needed
+
+Examples:
+- 7B model: ~14 GB VRAM
+- 13B model: ~26 GB VRAM  
+- 70B model: ~140 GB VRAM
+
+### With 4-bit Quantization
+
+Quantized models require approximately:
+- **4-bit NF4**: ~0.5-0.6 bytes per parameter
+- **VRAM savings**: Up to 4x reduction
+
+Examples:
+- 7B model: ~4 GB VRAM (instead of 14 GB)
+- 13B model: ~7 GB VRAM (instead of 26 GB)
+- 70B model: ~40 GB VRAM (instead of 140 GB)
+
+<Info>
+The exact memory usage will vary based on model architecture, batch size, and sequence length. These are approximate values for the model weights only.
+</Info>
+
+## Implementation Details
+
+Heretic uses the following quantization configuration:
+
+```python
+BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_compute_dtype=torch.bfloat16,  # or torch.float16
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_use_double_quant=True,
+)
+```
+
+**Configuration breakdown:**
+- `load_in_4bit=True`: Loads model weights in 4-bit precision
+- `bnb_4bit_compute_dtype`: Computation dtype (matched to your hardware)
+- `bnb_4bit_quant_type="nf4"`: Normal Float 4-bit quantization
+- `bnb_4bit_use_double_quant=True`: Quantizes the quantization constants for additional savings
+
+## Performance Impact
+
+Quantization affects both speed and quality:
+
+### Processing Speed
+- **Inference**: Slightly slower due to dequantization overhead
+- **Loading**: Significantly faster due to smaller model size
+- **Overall**: The VRAM savings often enable larger batch sizes, improving throughput
+
+### Model Quality
+- Decensored models produced with quantization are comparable to full precision
+- KL divergence and refusal metrics remain similar
+- The optimization process accounts for any quantization effects
+
+## Hardware Considerations
+
+<Steps>
+  <Step title="Check GPU Compatibility">
+    Ensure your GPU supports bitsandbytes (CUDA-capable NVIDIA GPUs)
+  </Step>
+  <Step title="Install bitsandbytes">
+    ```bash
+    pip install bitsandbytes
+    ```
+  </Step>
+  <Step title="Enable Quantization">
+    Set `quantization = "bnb_4bit"` in your config or use `--quantization bnb_4bit`
+  </Step>
+  <Step title="Run Heretic">
+    The model will automatically load in 4-bit precision
+  </Step>
+</Steps>
+
+## Merging Quantized Models
+
+<Warning>
+When merging LoRA adapters from quantized models, be aware of memory requirements.
+</Warning>
+
+If you load a model with quantization enabled, merging requires reloading the base model in full precision:
+
+```
+Model was loaded with quantization. Merging requires reloading the base model.
+WARNING: CPU merging requires dequantizing the entire model to system RAM.
+This can lead to system freezes if you run out of memory.
+```
+
+### RAM Requirements for Merging
+
+When merging a quantized model, you need sufficient **system RAM** (not VRAM):
+
+- **Estimated RAM needed**: ~3x the parameter count in GB
+- **Example**: A 27B model requires ~80 GB RAM
+- **Example**: A 70B model requires ~200 GB RAM
+
+The merge process:
+1. Loads the base model on CPU in full precision
+2. Applies the LoRA adapters
+3. Merges and saves the final model
+
+<Tip>
+If you don't have enough RAM to merge, you can:
+- Save the LoRA adapter only (much smaller)
+- Upload the adapter to Hugging Face and merge on a larger machine later
+- Use a cloud instance with high RAM for the merge operation
+</Tip>
+
+## Example Workflow
+
+Process a large model on a consumer GPU:
+
+```bash
+# Process a 70B model on a 48GB GPU
+heretic --quantization bnb_4bit \
+        --model meta-llama/Llama-3.1-70B-Instruct \
+        --batch-size 2
+```
+
+The quantization allows the 70B model to fit in ~40 GB of VRAM, leaving room for activations and batch processing.
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Start with Quantization" icon="lightbulb">
+    For models >13B, enable quantization by default on consumer GPUs
+  </Card>
+  <Card title="Monitor Memory" icon="chart-line">
+    Watch VRAM usage during batch size detection to optimize throughput
+  </Card>
+  <Card title="Plan for Merging" icon="diagram-project">
+    Ensure adequate system RAM if you plan to merge the final model
+  </Card>
+  <Card title="Test Quality" icon="vial">
+    Compare quantized vs full precision results on smaller models first
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+### Out of Memory During Loading
+
+If the model still doesn't fit with quantization:
+- Reduce `max_batch_size` to limit memory for batch size detection
+- Use `max_memory` to restrict allocation per device
+- Consider offloading to CPU with `device_map = "auto"`
+
+### Slow Performance
+
+If quantized inference is too slow:
+- Increase batch size (quantization leaves more VRAM available)
+- Ensure bitsandbytes is properly installed with CUDA support
+- Check that compute dtype matches your hardware (bfloat16 for Ampere+)
+
+### Merge Failures
+
+If merging fails due to insufficient RAM:
+```bash
+# Save adapter only
+Action: "Save the model to a local folder"
+Option: "Cancel" (when prompted about merging)
+
+# The adapter files are much smaller and can be merged later
+# on a machine with more RAM
+```
+
+## Related Configuration
+
+Other memory optimization options that work well with quantization:
+
+```toml config.toml
+# Use with quantization for maximum memory efficiency
+quantization = "bnb_4bit"
+
+# Automatic batch size detection
+batch_size = 0  # auto-detect optimal batch size
+
+# Limit batch size exploration
+max_batch_size = 32  # prevent OOM during detection
+
+# Control device allocation
+device_map = "auto"
+
+# Set per-device memory limits
+# max_memory = {"0": "20GB", "cpu": "64GB"}
+```
+
+See [Hardware Optimization](/advanced/hardware-optimization) for more details on memory management.

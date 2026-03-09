@@ -1,0 +1,185 @@
+---
+title: How Heretic Works
+description: Overview of Heretic's system architecture and abliteration process
+icon: "diagram-project"
+---
+
+## Overview
+
+Heretic combines an advanced implementation of **directional ablation** (also known as "abliteration") with **TPE-based parameter optimization** powered by [Optuna](https://optuna.org/). This approach enables Heretic to work completely automatically, finding high-quality abliteration parameters without requiring manual tuning or deep understanding of transformer internals.
+
+<Info>
+**Key Innovation**: Heretic automatically co-minimizes the number of refusals AND the KL divergence from the original model, resulting in decensored models that retain as much of the original model's intelligence as possible.
+</Info>
+
+## High-Level Workflow
+
+The abliteration process follows this workflow:
+
+<Steps>
+  <Step title="Model Loading & Preparation">
+    - Load the target model with LoRA adapters initialized to identity transformation
+    - Determine optimal batch size through automated benchmarking
+    - Detect common response prefixes (e.g., `<think></think>` for CoT models)
+  </Step>
+  
+  <Step title="Refusal Direction Calculation">
+    - Generate first-token residual vectors for "harmless" prompts (e.g., from `mlabonne/harmless_alpaca`)
+    - Generate first-token residual vectors for "harmful" prompts (e.g., from `mlabonne/harmful_behaviors`)
+    - Compute per-layer refusal directions as the normalized difference between harmful and harmless residual means
+    - Optionally orthogonalize directions relative to the "harmless" direction (projected abliteration)
+  </Step>
+  
+  <Step title="Parameter Optimization">
+    - Run 200 trials (60 random startup trials + 140 TPE-guided trials)
+    - For each trial:
+      - Sample abliteration parameters (direction index, weight kernel shape)
+      - Apply directional ablation via LoRA adapters
+      - Evaluate using KL divergence (model preservation) and refusal count (censorship removal)
+    - Build Pareto front of optimal solutions
+  </Step>
+  
+  <Step title="Model Export">
+    - User selects preferred trial from Pareto-optimal set
+    - Merge LoRA adapters into base model weights
+    - Save locally or upload to Hugging Face
+  </Step>
+</Steps>
+
+## Key Components
+
+Heretic's architecture consists of three main components:
+
+### Analyzer (`analyzer.py`)
+
+Computes and analyzes the geometric properties of residual vectors:
+
+- **Residual Extraction**: Generates hidden states at the first output token position for each layer
+- **Direction Computation**: Calculates refusal directions as `normalize(bad_mean - good_mean)` for each layer
+- **Geometric Analysis**: Computes cosine similarities, norms, and silhouette coefficients
+- **Visualization**: Creates PaCMAP projections showing how "harmful" and "harmless" residuals separate across layers
+
+### Model (`model.py`)
+
+Handles model operations and abliteration:
+
+- **LoRA Integration**: Uses PEFT library to apply abliteration as low-rank adapters (rank 1 by default, rank 3 for full normalization)
+- **Directional Ablation**: Orthogonalizes weight matrices with respect to refusal directions
+- **Component Support**: Modifies `attn.o_proj` and `mlp.down_proj` (including MoE architectures)
+- **Response Generation**: Produces model outputs for evaluation and chat
+
+<Note>
+**Technical Detail**: LoRA abliteration computes `delta W = -lambda * v * (v^T W)` where `v` is the refusal direction, implemented as `lora_B = -lambda * v` and `lora_A = v^T W`.
+</Note>
+
+### Evaluator (`evaluator.py`)
+
+Measures abliteration quality:
+
+- **KL Divergence**: Compares first-token probability distributions between base and abliterated models on "harmless" prompts
+- **Refusal Detection**: Scans responses for refusal markers (`"sorry"`, `"I cannot"`, `"unethical"`, etc.)
+- **Multi-Objective Scoring**: Returns `(kl_divergence, refusals)` tuple for Optuna's Pareto optimization
+
+<CodeGroup>
+```python analyzer.py:67-86
+# Compute refusal directions from residuals
+g = self.good_residuals.mean(dim=0)
+g_star = torch.stack([
+    compute_geometric_median(
+        self.good_residuals[:, layer_index, :].detach().cpu()
+    ).median
+    for layer_index in range(len(self.model.get_layers()) + 1)
+])
+b = self.bad_residuals.mean(dim=0)
+b_star = torch.stack([
+    compute_geometric_median(
+        self.bad_residuals[:, layer_index, :].detach().cpu()
+    ).median
+    for layer_index in range(len(self.model.get_layers()) + 1)
+])
+r = b - g  # Refusal direction for means
+r_star = b_star - g_star  # Refusal direction for medians
+```
+
+```python model.py:457-505
+# LoRA-based directional ablation
+v = layer_refusal_direction.to(module.weight.device)
+
+# Get W (dequantize if necessary)
+base_weight = module.base_layer.weight
+if quant_state is None:
+    W = base_weight.to(torch.float32)
+else:
+    # 4-bit quantization
+    W = bnb.functional.dequantize_4bit(
+        base_weight.data, quant_state
+    ).to(torch.float32)
+
+# Flatten weight matrix to (out_features, in_features)
+W = W.view(W.shape[0], -1)
+
+# Calculate lora_A = v^T W
+lora_A = (v @ W).view(1, -1)
+
+# Calculate lora_B = -weight * v  
+lora_B = (-weight * v).view(-1, 1)
+```
+
+```python evaluator.py:95-125
+# Multi-objective evaluation
+def get_score(self) -> tuple[tuple[float, float], float, int]:
+    # Measure KL divergence on harmless prompts
+    logprobs = self.model.get_logprobs_batched(self.good_prompts)
+    kl_divergence = F.kl_div(
+        logprobs,
+        self.base_logprobs,
+        reduction="batchmean",
+        log_target=True,
+    ).item()
+    
+    # Count refusals on harmful prompts
+    refusals = self.count_refusals()
+    
+    # Return multi-objective score
+    refusals_score = refusals / self.base_refusals
+    
+    if kl_divergence >= kl_divergence_target:
+        kld_score = kl_divergence / kl_divergence_scale
+    else:
+        kld_score = refusals_score * kl_divergence_target / kl_divergence_scale
+    
+    return (kld_score, refusals_score), kl_divergence, refusals
+```
+</CodeGroup>
+
+## Optimization Process
+
+Heretic uses **Tree-structured Parzen Estimator (TPE)** sampling from Optuna to efficiently explore the parameter space:
+
+1. **Startup Phase** (60 trials): Random sampling for exploration
+2. **TPE Phase** (140 trials): Guided sampling based on promising regions
+3. **Multivariate TPE**: Models correlations between parameters for faster convergence
+4. **Pareto Optimization**: Maintains non-dominated solutions across the refusals/KL-divergence tradeoff
+
+<Info>
+Checkpoints are automatically saved to `checkpoints/<model-name>.jsonl` using Optuna's journal storage, allowing you to resume interrupted runs.
+</Info>
+
+## Performance
+
+On an RTX 3090 with default configuration, decensoring Llama-3.1-8B-Instruct takes approximately **45 minutes**. Performance can be improved by:
+
+- Using 4-bit quantization (`quantization = "bnb_4bit"`)
+- Reducing trial count (`n_trials = 100`)
+- Increasing batch size (auto-detected by default)
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="Abliteration Deep Dive" icon="brain" href="/concepts/abliteration">
+    Learn about directional ablation and refusal directions
+  </Card>
+  <Card title="Optimization Process" icon="chart-line" href="/concepts/optimization">
+    Understand parameter optimization and weight kernels
+  </Card>
+</CardGroup>

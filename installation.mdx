@@ -1,0 +1,187 @@
+---
+title: Installation
+description: Install Heretic and prepare your environment for model decensoring
+---
+
+## System Requirements
+
+Before installing Heretic, ensure your system meets these requirements:
+
+### Software Requirements
+
+- **Python**: 3.10 or higher
+- **PyTorch**: 2.2 or higher
+- **Operating System**: Linux, macOS, or Windows with WSL
+
+### Hardware Requirements
+
+<Info>
+Heretic supports various accelerators including CUDA GPUs, Apple Metal (MPS), XPU, MLU, SDAA, MUSA, and NPU.
+</Info>
+
+**Recommended:**
+- GPU with at least 24GB VRAM for 8B models
+- 32GB+ system RAM
+- Multi-GPU setup for larger models
+
+**Minimum (with quantization):**
+- GPU with 12GB VRAM for 8B models using 4-bit quantization
+- 16GB system RAM
+
+<Tip>
+Heretic supports model quantization with bitsandbytes, which can drastically reduce VRAM requirements. A quantized 8B model can run on GPUs with as little as 12GB VRAM.
+</Tip>
+
+## Installation Steps
+
+<Steps>
+  <Step title="Prepare Python Environment">
+    Ensure you have Python 3.10 or higher installed. Create a virtual environment (recommended):
+
+    ```bash
+    python -m venv heretic-env
+    source heretic-env/bin/activate  # On Windows: heretic-env\Scripts\activate
+    ```
+  </Step>
+
+  <Step title="Install PyTorch">
+    Install PyTorch 2.2+ appropriate for your hardware. Visit [pytorch.org](https://pytorch.org/get-started/locally/) for platform-specific instructions.
+
+    **Example for CUDA 12.1:**
+    ```bash
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+    ```
+
+    **Example for Apple Silicon (MPS):**
+    ```bash
+    pip install torch torchvision torchaudio
+    ```
+
+    **Example for CPU only (slow, not recommended):**
+    ```bash
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+    ```
+  </Step>
+
+  <Step title="Install Heretic">
+    Install Heretic from PyPI:
+
+    ```bash
+    pip install -U heretic-llm
+    ```
+
+    This installs all required dependencies including:
+    - `transformers` - Model loading and inference
+    - `accelerate` - Multi-GPU support and device management
+    - `bitsandbytes` - Quantization support
+    - `optuna` - Parameter optimization
+    - `peft` - LoRA adapter support
+    - `datasets` - Prompt dataset loading
+    - And other essential libraries
+  </Step>
+
+  <Step title="Verify Installation">
+    Verify Heretic is installed correctly:
+
+    ```bash
+    heretic --help
+    ```
+
+    You should see the Heretic help message with available options.
+  </Step>
+</Steps>
+
+## Optional: Research Dependencies
+
+If you want to use Heretic's research features for visualizing and analyzing model internals, install the optional `research` extra:
+
+```bash
+pip install -U heretic-llm[research]
+```
+
+This enables:
+- `--plot-residuals` - Generate PaCMAP projections of residual vectors
+- `--print-residual-geometry` - Print detailed geometric analysis of refusal directions
+
+The research dependencies include:
+- `pacmap` - Dimensionality reduction for visualization
+- `matplotlib` - Plotting library
+- `geom-median` - Geometric median computation
+- `scikit-learn` - Clustering metrics
+- `numpy` - Numerical operations
+
+<Note>
+Research features are primarily useful for interpretability research and understanding how abliteration works. They are not required for basic model decensoring.
+</Note>
+
+## Hardware Optimization
+
+### Using Quantization
+
+For systems with limited VRAM, enable 4-bit quantization to reduce memory requirements:
+
+```bash
+heretic --quantization bnb_4bit Qwen/Qwen3-4B-Instruct-2507
+```
+
+Or add to `config.toml`:
+```toml
+quantization = "bnb_4bit"
+```
+
+<Warning>
+Quantized models require more CPU RAM when merging LoRA adapters. A 27B model needs ~80GB RAM, and a 70B model needs ~200GB RAM for merging.
+</Warning>
+
+### Multi-GPU Configuration
+
+Heretic automatically uses all available GPUs via Accelerate's `device_map="auto"`. For manual control, create a `config.toml`:
+
+```toml
+device_map = "auto"
+
+# Optional: Limit memory per device
+max_memory = {"0": "20GB", "1": "20GB", "cpu": "64GB"}
+```
+
+### Performance Tuning
+
+Heretic automatically benchmarks your system to determine the optimal batch size. On an RTX 3090, decensoring Llama-3.1-8B-Instruct takes about 45 minutes with default settings.
+
+<Tip>
+**Expected processing times (RTX 3090, default 200 trials):**
+- 8B model: ~45 minutes
+- 13B model: ~75 minutes
+- 70B model (multi-GPU): ~5 hours
+
+Processing time scales roughly linearly with the number of optimization trials.
+</Tip>
+
+## Troubleshooting
+
+### Out of Memory Errors
+
+1. Enable quantization with `--quantization bnb_4bit`
+2. Reduce batch size with `--batch-size 1`
+3. Limit maximum batch size with `--max-batch-size 16`
+4. Use a smaller model or add more GPUs
+
+### Import Errors
+
+Ensure PyTorch is installed **before** installing Heretic. Some dependencies require PyTorch to be present during installation.
+
+### GPU Not Detected
+
+Verify your PyTorch installation supports your GPU:
+```python
+import torch
+print(torch.cuda.is_available())  # Should print True for CUDA GPUs
+```
+
+If False, reinstall PyTorch with the correct CUDA version.
+
+## Next Steps
+
+<Card title="Quick Start Guide" icon="rocket" href="/quickstart">
+  Learn how to decensor your first model
+</Card>

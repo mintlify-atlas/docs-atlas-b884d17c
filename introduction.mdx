@@ -1,0 +1,86 @@
+---
+title: Introduction
+description: Fully automatic censorship removal for language models
+---
+
+## What is Heretic?
+
+Heretic is a tool that removes censorship (also known as "safety alignment") from transformer-based language models without expensive post-training. It enables you to automatically decensor language models while preserving as much of their original intelligence as possible.
+
+Unlike manual abliteration approaches that require human expertise to tune parameters, Heretic works **completely automatically**. It combines an advanced implementation of directional ablation ("abliteration") with a TPE-based parameter optimizer powered by [Optuna](https://optuna.org/).
+
+<Info>
+Heretic finds high-quality abliteration parameters by co-minimizing the number of refusals and the KL divergence from the original model, resulting in a decensored model that retains maximum intelligence.
+</Info>
+
+## Key Benefits
+
+<CardGroup cols={2}>
+  <Card title="Fully Automatic" icon="wand-magic-sparkles">
+    No need to understand transformer internals or manually tune parameters. Anyone who can run a command-line program can use Heretic.
+  </Card>
+  <Card title="Intelligence Preservation" icon="brain">
+    Optimizes for minimal KL divergence from the original model, preserving capabilities while removing censorship.
+  </Card>
+  <Card title="Advanced Abliteration" icon="scissors">
+    Implements sophisticated directional ablation with flexible weight kernels and refusal direction interpolation.
+  </Card>
+  <Card title="Wide Model Support" icon="robot">
+    Supports most dense models, many multimodal models, and several different MoE architectures.
+  </Card>
+</CardGroup>
+
+## Performance Comparison
+
+Running unsupervised with the default configuration, Heretic produces decensored models that rival the quality of abliterations created manually by human experts:
+
+| Model | Refusals for "harmful" prompts | KL divergence from original model for "harmless" prompts |
+| :--- | ---: | ---: |
+| [google/gemma-3-12b-it](https://huggingface.co/google/gemma-3-12b-it) (original) | 97/100 | 0 *(by definition)* |
+| [mlabonne/gemma-3-12b-it-abliterated-v2](https://huggingface.co/mlabonne/gemma-3-12b-it-abliterated-v2) | 3/100 | 1.04 |
+| [huihui-ai/gemma-3-12b-it-abliterated](https://huggingface.co/huihui-ai/gemma-3-12b-it-abliterated) | 3/100 | 0.45 |
+| **[p-e-w/gemma-3-12b-it-heretic](https://huggingface.co/p-e-w/gemma-3-12b-it-heretic) (ours)** | **3/100** | **0.16** |
+
+<Tip>
+The Heretic version achieves the same level of refusal suppression as other abliterations, but at a **much lower KL divergence**, indicating less damage to the original model's capabilities.
+</Tip>
+
+## How Heretic Differs from Manual Abliteration
+
+Traditional abliteration requires:
+- Deep understanding of transformer architecture
+- Manual parameter tuning and experimentation
+- Expertise in analyzing model internals
+- Trial-and-error to find optimal settings
+
+Heretic automates all of this:
+- **Automatic parameter optimization** using state-of-the-art Bayesian optimization
+- **Multi-objective optimization** balancing refusal suppression and intelligence preservation
+- **Flexible ablation kernels** that adapt to each model's characteristics
+- **Refusal direction interpolation** to find better directions than any single layer
+
+## Use Cases
+
+- **Research**: Study model behavior without artificial constraints
+- **Creative applications**: Remove limitations that hinder creative writing or roleplay
+- **Comparative analysis**: Understand how safety alignment affects model capabilities
+- **Custom deployments**: Create models aligned with your specific requirements rather than generic corporate policies
+
+<Warning>
+KL divergence values above 1.0 usually indicate significant damage to the original model's capabilities. Heretic's optimization helps you find the sweet spot between censorship removal and capability preservation.
+</Warning>
+
+## Community Impact
+
+The community has created and published [over 1,000 Heretic models](https://huggingface.co/models?other=heretic) on Hugging Face. Users have reported that Heretic produces models that give properly formatted long responses to sensitive topics while maintaining the intelligence and capabilities of the base model.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Set up Heretic in your environment
+  </Card>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Decensor your first model in minutes
+  </Card>
+</CardGroup>

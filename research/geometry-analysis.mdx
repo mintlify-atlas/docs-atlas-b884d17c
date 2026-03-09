@@ -1,0 +1,319 @@
+---
+title: Residual Geometry Analysis
+description: Quantitative metrics for understanding refusal directions
+---
+
+## Overview
+
+The `--print-residual-geometry` flag provides a comprehensive quantitative analysis of how residual vectors for "harmful" and "harmless" prompts relate to each other. This generates a detailed table packed with metrics that facilitate understanding of refusal mechanisms in transformer models.
+
+## Enabling Geometry Analysis
+
+To print residual geometry metrics, use the `--print-residual-geometry` flag:
+
+```bash
+heretic Qwen/Qwen3-4B-Instruct-2507 --print-residual-geometry
+```
+
+<Warning>
+You must install Heretic with the research extra for this feature:
+```bash
+pip install -U heretic-llm[research]
+```
+</Warning>
+
+## Example Output
+
+Here is the geometry analysis table for [gemma-3-270m-it](https://huggingface.co/google/gemma-3-270m-it):
+
+```
+┏━━━━━━━┳━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Layer ┃ S(g,b) ┃ S(g*,b*) ┃  S(g,r) ┃ S(g*,r*) ┃  S(b,r) ┃ S(b*,r*) ┃      |g| ┃     |g*| ┃      |b| ┃     |b*| ┃     |r| ┃    |r*| ┃   Silh ┃
+┡━━━━━━━╇━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│     1 │ 1.0000 │   1.0000 │ -0.4311 │  -0.4906 │ -0.4254 │  -0.4847 │   170.29 │   170.49 │   169.78 │   169.85 │    1.19 │    1.31 │ 0.0480 │
+│     2 │ 1.0000 │   1.0000 │  0.4297 │   0.4465 │  0.4365 │   0.4524 │   768.55 │   768.77 │   771.32 │   771.36 │    6.39 │    5.76 │ 0.0745 │
+│     3 │ 0.9999 │   1.0000 │ -0.5699 │  -0.5577 │ -0.5614 │  -0.5498 │  1020.98 │  1021.13 │  1013.80 │  1014.71 │   12.70 │   11.60 │ 0.0920 │
+│     4 │ 0.9999 │   1.0000 │  0.6582 │   0.6553 │  0.6659 │   0.6627 │  1356.39 │  1356.20 │  1368.71 │  1367.95 │   18.62 │   17.84 │ 0.0957 │
+│     5 │ 0.9987 │   0.9990 │ -0.6880 │  -0.6761 │ -0.6497 │  -0.6418 │   766.54 │   762.25 │   731.75 │   732.42 │   51.97 │   45.24 │ 0.1018 │
+│     6 │ 0.9998 │   0.9998 │ -0.1983 │  -0.2312 │ -0.1811 │  -0.2141 │  2417.35 │  2421.08 │  2409.18 │  2411.40 │   43.06 │   43.47 │ 0.0900 │
+│     7 │ 0.9998 │   0.9997 │ -0.5258 │  -0.5746 │ -0.5072 │  -0.5560 │  3444.92 │  3474.99 │  3400.01 │  3421.63 │   86.94 │   94.38 │ 0.0492 │
+│     8 │ 0.9990 │   0.9991 │  0.8235 │   0.8312 │  0.8479 │   0.8542 │  4596.54 │  4615.62 │  4918.32 │  4934.20 │  384.87 │  377.87 │ 0.2278 │
+│     9 │ 0.9992 │   0.9992 │  0.5335 │   0.5441 │  0.5678 │   0.5780 │  5322.30 │  5316.96 │  5468.65 │  5466.98 │  265.68 │  267.28 │ 0.1318 │
+│    10 │ 0.9974 │   0.9973 │  0.8189 │   0.8250 │  0.8579 │   0.8644 │  5328.81 │  5325.63 │  5953.35 │  5985.15 │  743.95 │  779.74 │ 0.2863 │
+│    11 │ 0.9977 │   0.9978 │  0.4262 │   0.4045 │  0.4862 │   0.4645 │  9644.02 │  9674.06 │  9983.47 │  9990.28 │  743.28 │  726.99 │ 0.1576 │
+│    12 │ 0.9904 │   0.9907 │  0.4384 │   0.4077 │  0.5586 │   0.5283 │ 10257.40 │ 10368.50 │ 11114.51 │ 11151.21 │ 1711.18 │ 1664.69 │ 0.1890 │
+│    13 │ 0.9867 │   0.9874 │  0.4007 │   0.3680 │  0.5444 │   0.5103 │ 12305.12 │ 12423.75 │ 13440.31 │ 13432.47 │ 2386.43 │ 2282.47 │ 0.1293 │
+│    14 │ 0.9921 │   0.9922 │  0.3198 │   0.2682 │  0.4364 │   0.3859 │ 16929.16 │ 17080.37 │ 17826.97 │ 17836.03 │ 2365.23 │ 2301.87 │ 0.1282 │
+│    15 │ 0.9846 │   0.9850 │  0.1198 │   0.0963 │  0.2913 │   0.2663 │ 16858.58 │ 16949.44 │ 17496.00 │ 17502.88 │ 3077.08 │ 3029.60 │ 0.1611 │
+│    16 │ 0.9686 │   0.9689 │ -0.0029 │  -0.0254 │  0.2457 │   0.2226 │ 18912.77 │ 19074.86 │ 19510.56 │ 19559.62 │ 4848.35 │ 4839.75 │ 0.1516 │
+│    17 │ 0.9782 │   0.9784 │ -0.0174 │  -0.0381 │  0.1908 │   0.1694 │ 27098.09 │ 27273.00 │ 27601.12 │ 27653.12 │ 5738.19 │ 5724.21 │ 0.1641 │
+│    18 │ 0.9184 │   0.9196 │  0.1343 │   0.1430 │  0.5155 │   0.5204 │   190.16 │   190.35 │   219.91 │   220.62 │   87.82 │   87.59 │ 0.1855 │
+└───────┴────────┴──────────┴─────────┴──────────┴─────────┴──────────┴──────────┴──────────┴──────────┴──────────┴─────────┴─────────┴────────┘
+```
+
+## Understanding the Metrics
+
+The geometry analysis table includes the following vectors and metrics:
+
+### Vectors
+
+- **g** = Mean of residual vectors for good (harmless) prompts
+- **g\*** = Geometric median of residual vectors for good prompts
+- **b** = Mean of residual vectors for bad (harmful) prompts
+- **b\*** = Geometric median of residual vectors for bad prompts
+- **r** = Refusal direction for means (i.e., **b - g**)
+- **r\*** = Refusal direction for geometric medians (i.e., **b\* - g\***)
+
+### Similarity Metrics
+
+**S(x,y)** = Cosine similarity of vectors **x** and **y**
+
+Cosine similarity ranges from -1 to 1:
+- **1.0** = Vectors point in exactly the same direction
+- **0.0** = Vectors are orthogonal (perpendicular)
+- **-1.0** = Vectors point in opposite directions
+
+Key similarity columns:
+
+- **S(g,b)** - How similar are mean vectors for good/bad prompts?
+  - High values (close to 1.0) indicate the residuals are very similar overall
+  - This is typically high in early layers
+  
+- **S(g\*,b\*)** - Same as S(g,b) but using geometric medians
+  - Geometric medians are more robust to outliers than means
+  - Usually very similar to S(g,b)
+
+- **S(g,r)** - How aligned is the good direction with the refusal direction?
+  - Positive values mean the refusal direction points away from good prompts
+  - Negative values mean the refusal direction points toward good prompts
+  
+- **S(g\*,r\*)** - Same as S(g,r) but using geometric medians
+
+- **S(b,r)** - How aligned is the bad direction with the refusal direction?
+  - Should typically be positive and relatively high
+  - Indicates the refusal direction captures the harmful prompt representation
+  
+- **S(b\*,r\*)** - Same as S(b,r) but using geometric medians
+
+### Norm Metrics
+
+**|x|** = L2 norm (Euclidean magnitude) of vector **x**
+
+The L2 norm measures the "size" or "magnitude" of a vector:
+
+- **|g|** and **|g\*|** - Magnitude of good prompt representations
+- **|b|** and **|b\*|** - Magnitude of bad prompt representations
+- **|r|** and **|r\*|** - Magnitude of refusal directions
+
+<Info>
+Norm magnitudes typically increase through the layers as representations become more complex, then may decrease in final layers.
+</Info>
+
+### Clustering Metrics
+
+**Silh** = Mean silhouette coefficient of residuals for good/bad clusters
+
+The silhouette coefficient measures how well the residuals cluster into two distinct groups:
+
+- **Range**: -1 to 1
+- **> 0.5** = Strong, well-separated clusters
+- **0.2 - 0.5** = Moderate separation (weak structure)
+- **< 0.2** = Weak separation (overlapping clusters)
+- **< 0** = Points may be assigned to wrong clusters
+
+Higher silhouette scores indicate clearer separation between "harmful" and "harmless" representations, suggesting that layer is a good candidate for ablation.
+
+## Interpreting the Output
+
+### Understanding Geometric Medians vs Means
+
+Heretic computes both **means** and **geometric medians** for residual vectors:
+
+#### Means (g, b, r)
+
+- Standard arithmetic average across all residual vectors
+- Sensitive to outliers - extreme values can skew the result
+- Computationally simple and fast
+- Traditional choice for difference-of-means refusal directions
+
+#### Geometric Medians (g\*, b\*, r\*)
+
+- The point that minimizes the sum of distances to all residual vectors
+- Robust to outliers - extreme values have less influence
+- More computationally expensive to compute
+- Can provide more stable refusal directions for noisy datasets
+
+<Tip>
+If mean and geometric median metrics differ significantly, it suggests the presence of outlier residual vectors. The geometric median is generally more reliable in such cases.
+</Tip>
+
+### Refusal Direction Analysis
+
+The refusal direction **r** (or **r\***) is the key vector that directional ablation removes. Here's how to analyze it:
+
+#### Strong Refusal Signals
+
+Layers with strong refusal signals typically show:
+
+1. **High |r|** - Large refusal direction magnitude (e.g., > 100 in the example)
+2. **High Silh** - Good cluster separation (e.g., > 0.15)
+3. **High S(b,r)** - Bad prompts align with refusal direction (e.g., > 0.5)
+4. **Moderate to high |S(g,r)|** - Good prompts either align or anti-align with refusal
+
+**Example from the table above**: Layer 10
+```
+│    10 │ 0.9974 │   0.9973 │  0.8189 │   0.8250 │  0.8579 │   0.8644 │  5328.81 │  5325.63 │  5953.35 │  5985.15 │  743.95 │  779.74 │ 0.2863 │
+```
+
+- Refusal magnitude |r| = 743.95 (large)
+- Silhouette = 0.2863 (highest in the table)
+- S(b,r) = 0.8579 (very high alignment)
+- S(g,r) = 0.8189 (also high, indicating refusal affects both directions)
+
+#### Weak Refusal Signals
+
+Layers with weak refusal signals typically show:
+
+1. **Low |r|** - Small refusal direction magnitude
+2. **Low Silh** - Poor cluster separation (e.g., < 0.1)
+3. **Low |S(g,r)|** and **Low |S(b,r)|** - Neither direction strongly aligns
+
+**Example from the table above**: Layer 1
+```
+│     1 │ 1.0000 │   1.0000 │ -0.4311 │  -0.4906 │ -0.4254 │  -0.4847 │   170.29 │   170.49 │   169.78 │   169.85 │    1.19 │    1.31 │ 0.0480 │
+```
+
+- Refusal magnitude |r| = 1.19 (very small)
+- Silhouette = 0.0480 (very low)
+- S(g,b) = 1.0000 (clusters are nearly identical)
+
+#### Directional Consistency
+
+Compare S(g,r) and S(b,r) across layers:
+
+- **Same sign** = Refusal direction is "in between" good and bad representations
+- **Opposite signs** = Refusal direction clearly separates good from bad
+- **Sign changes** across layers = Refusal mechanism evolves through the network
+
+### Layer-by-Layer Patterns
+
+Common patterns observed in the geometry analysis:
+
+#### Early Layers (e.g., layers 1-3)
+
+- Very high S(g,b) (≈ 1.0) - Representations are still very similar
+- Small |r| - Refusal direction is weak
+- Low Silh - Poor cluster separation
+- **Interpretation**: The model hasn't yet differentiated harmful from harmless
+
+#### Middle Layers (e.g., layers 8-12)
+
+- Decreasing S(g,b) - Representations diverge
+- Growing |r| - Refusal direction strengthens
+- Higher Silh - Better cluster separation
+- **Interpretation**: Core refusal mechanisms are active here
+
+#### Late Layers (e.g., layer 18)
+
+- May show different patterns depending on model architecture
+- Sometimes |r| is still large (refusal persists)
+- Sometimes patterns reverse (refusal resolved)
+- **Interpretation**: Model prepares final output representation
+
+## Configuration
+
+The geometry analysis uses the same datasets configured for the main abliteration process:
+
+```toml
+# Whether to print detailed information about residuals and refusal directions
+print_residual_geometry = false
+
+# Dataset configurations
+[good_prompts]
+dataset = "mlabonne/harmless_alpaca"
+split = "train[:400]"
+column = "text"
+
+[bad_prompts]
+dataset = "mlabonne/harmful_behaviors" 
+split = "train[:400]"
+column = "text"
+```
+
+You can enable this via configuration file or command-line flag:
+
+<CodeGroup>
+```bash Command Line
+heretic Qwen/Qwen3-4B-Instruct-2507 --print-residual-geometry
+```
+
+```toml config.toml
+print_residual_geometry = true
+```
+</CodeGroup>
+
+## Use Cases
+
+### Identifying Optimal Ablation Layers
+
+Use the silhouette coefficient and refusal magnitude to identify which layers have the strongest refusal signals:
+
+1. Sort layers by Silh (descending)
+2. Look for layers with both high Silh and high |r|
+3. These layers are prime candidates for targeted ablation
+
+### Validating Ablation Parameters
+
+Compare geometry before and after ablation:
+
+- |r| should decrease in ablated layers
+- Silh should decrease (clusters should be less separated)
+- S(g,b) should increase (representations should be more similar)
+
+### Understanding Model Architecture
+
+Different architectures show different geometric patterns:
+
+- Some models have refusal concentrated in specific layers
+- Others distribute refusal across many layers
+- MoE models may show different patterns per expert
+
+### Research and Interpretability
+
+The metrics provide quantitative data for research questions:
+
+- How do refusal directions evolve during training?
+- How do different alignment techniques affect geometric properties?
+- Are geometric medians more effective than means for ablation?
+- What is the relationship between Silh and ablation effectiveness?
+
+## Implementation Details
+
+From `analyzer.py`, the geometry analysis:
+
+1. Computes means using `Tensor.mean(dim=0)`
+2. Computes geometric medians using the `geom-median` library
+3. Calculates cosine similarities using `F.cosine_similarity()`
+4. Calculates L2 norms using `LA.vector_norm()`
+5. Computes silhouette coefficients using `sklearn.metrics.silhouette_score()`
+
+<Note>
+Geometric median computation is performed on CPU and may take a few seconds for large models with many layers.
+</Note>
+
+## Combining with Residual Plots
+
+For comprehensive analysis, use both tools together:
+
+```bash
+heretic Qwen/Qwen3-4B-Instruct-2507 \
+  --print-residual-geometry \
+  --plot-residuals
+```
+
+This provides:
+- **Quantitative metrics** from geometry analysis
+- **Visual intuition** from residual plots
+- **Temporal evolution** from animated GIFs
+
+Together, these tools give you a complete picture of how refusal mechanisms work in the model.

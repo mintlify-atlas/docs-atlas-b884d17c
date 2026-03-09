@@ -1,0 +1,157 @@
+---
+title: Supported Models
+description: Model architectures and compatibility with Heretic
+---
+
+Heretic supports a wide range of transformer-based language models for automatic censorship removal. Understanding which models are compatible helps you choose the right model for your needs.
+
+## What's Supported
+
+Heretic works with most modern language model architectures:
+
+### Dense Transformer Models
+
+Most dense transformer models are fully supported, including:
+
+- Standard decoder-only transformers (GPT-style architectures)
+- Instruction-tuned models
+- Chat models
+- Models with standard attention mechanisms
+
+**Example supported models:**
+
+- **Llama family**: Llama-3.1-8B-Instruct and other Llama variants
+- **Gemma family**: google/gemma-3-12b-it, google/gemma-3-270m-it
+- **Qwen family**: Qwen/Qwen3-4B-Instruct-2507
+- **GPT-OSS**: gpt-oss-20b and variants
+
+### Multimodal Models
+
+Many multimodal models (vision-language models) are supported:
+
+- Models that combine vision encoders with language model backbones
+- Standard vision-language architectures where the language component uses supported transformer layers
+
+### Mixture of Experts (MoE) Architectures
+
+Several different MoE architectures are supported:
+
+- Standard MoE models with expert routing
+- Multiple MoE variants and configurations
+
+## What's NOT Supported
+
+Certain model architectures are currently incompatible with Heretic:
+
+<Warning>
+The following model types will not work with Heretic:
+
+- **State Space Models (SSMs)** and hybrid architectures (e.g., Mamba, Jamba)
+- **Models with inhomogeneous layers** (different layer structures within the same model)
+- **Novel attention mechanisms** that deviate significantly from standard transformer attention
+</Warning>
+
+### Why These Limitations?
+
+Heretic's abliteration technique works by modifying the weight matrices of specific transformer components:
+
+- Attention out-projection layers
+- MLP down-projection layers
+
+Models that don't have these standard components, or that use fundamentally different architectures, cannot be processed by Heretic in its current form.
+
+## Finding Compatible Models
+
+### Community Models on Hugging Face
+
+The community has created and shared over 1,000 models processed with Heretic:
+
+<Card title="Browse Community Models" icon="huggingface" href="https://huggingface.co/models?other=heretic">
+  Explore 1,000+ Heretic models created by the community, all tagged with `heretic` on Hugging Face
+</Card>
+
+### The Bestiary Collection
+
+A curated collection of high-quality models decensored using Heretic:
+
+<Card title="The Bestiary" icon="collection" href="https://huggingface.co/collections/p-e-w/the-bestiary">
+  Hand-picked examples of models processed with Heretic, showcasing the quality and variety of results
+</Card>
+
+## Testing Model Compatibility
+
+The easiest way to check if a model is compatible is to try running Heretic on it:
+
+```bash
+heretic your-model-name
+```
+
+If the model is incompatible, Heretic will typically fail during the model loading or abliteration phase with an error message indicating the issue.
+
+<Tip>
+Start with smaller models (under 10B parameters) when testing compatibility to reduce processing time and resource requirements.
+</Tip>
+
+## Performance Benchmarks
+
+Heretic has been tested extensively on various model sizes and architectures:
+
+### Processing Time
+
+On an RTX 3090 with default configuration:
+
+- **Llama-3.1-8B-Instruct**: ~45 minutes
+- Smaller models (1-4B): 15-30 minutes
+- Larger models (20B+): 2-4 hours
+
+<Note>
+Processing time scales with model size and hardware capabilities. Using quantization can significantly reduce VRAM requirements but may slightly increase processing time.
+</Note>
+
+### Quality Results
+
+Comparison on google/gemma-3-12b-it:
+
+| Model | Refusals | KL Divergence |
+|-------|----------|---------------|
+| Original | 97/100 | 0 (baseline) |
+| Manual abliteration (mlabonne) | 3/100 | 1.04 |
+| Manual abliteration (huihui-ai) | 3/100 | 0.45 |
+| **Heretic (automatic)** | **3/100** | **0.16** |
+
+Heretic achieves comparable or better refusal suppression with significantly lower KL divergence, indicating less damage to the original model's capabilities.
+
+## Architecture-Specific Notes
+
+### Dense Models
+
+Dense transformer models are the most thoroughly tested and reliable:
+
+- Full support for standard attention mechanisms
+- Both pre-norm and post-norm architectures work
+- Various activation functions (SwiGLU, GELU, etc.) are supported
+
+### MoE Models
+
+Mixture of Experts models require more VRAM but are fully supported:
+
+- Expert routing mechanisms are preserved
+- Abliteration is applied to expert layers as well as routing
+- Quantization is especially helpful for large MoE models
+
+### Multimodal Models
+
+For vision-language models:
+
+- Only the language model component is modified
+- Vision encoders remain unchanged
+- The model retains its multimodal capabilities after abliteration
+
+## Reporting Compatibility Issues
+
+If you encounter issues with a model that should theoretically be supported:
+
+1. Check that you're using the latest version of Heretic
+2. Verify the model loads correctly with Hugging Face Transformers
+3. Try enabling quantization if you encounter memory errors
+4. Report the issue on the [GitHub repository](https://github.com/p-e-w/heretic) with model details

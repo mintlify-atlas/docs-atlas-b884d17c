@@ -1,0 +1,474 @@
+---
+title: "Optimization Configuration"
+description: "Configure Heretic's abliteration optimization process, batch sizes, and KL divergence parameters"
+---
+
+## Overview
+
+Optimization configuration controls Heretic's automatic parameter search process. Heretic uses [Optuna](https://optuna.org/) with a TPE (Tree-structured Parzen Estimator) sampler to co-minimize refusal count and KL divergence from the original model.
+
+<Info>
+Heretic's optimization is fully automatic. You typically don't need to change these settings, but they're available for fine-tuning performance or experimenting with the abliteration process.
+</Info>
+
+## Optimization Trials
+
+Heretic runs multiple abliteration trials to find optimal parameters. Each trial tests a different combination of ablation weights and directions.
+
+### n_trials
+
+The total number of optimization trials to run.
+
+<CodeGroup>
+```toml config.toml
+# Default: 200 trials
+n_trials = 200
+
+# Quick test (may not find optimal parameters)
+n_trials = 50
+
+# Extensive search (slower but may find better results)
+n_trials = 400
+```
+
+```bash CLI
+heretic model-name --n-trials 300
+```
+</CodeGroup>
+
+**Typical values:**
+- `50-100`: Quick experiments, testing configuration changes
+- `200` (default): Good balance of quality and speed
+- `300-400`: Extensive search for challenging models
+
+<Tip>
+More trials take longer but may find better abliteration parameters. The default of 200 trials works well for most models.
+</Tip>
+
+### n_startup_trials
+
+The number of initial trials that use random sampling for exploration, before the TPE optimizer takes over.
+
+<CodeGroup>
+```toml config.toml
+# Default: 60 startup trials
+n_startup_trials = 60
+
+# Less exploration
+n_startup_trials = 30
+
+# More exploration
+n_startup_trials = 100
+```
+
+```bash CLI
+heretic model-name --n-startup-trials 80
+```
+</CodeGroup>
+
+**Relationship to n_trials:**
+- Startup trials should be approximately 25-30% of total trials
+- After startup trials complete, TPE uses the results to guide further exploration
+- Default: 60 startup trials out of 200 total (30%)
+
+<Note>
+The startup phase explores the parameter space randomly. After that, Optuna's TPE sampler uses Bayesian optimization to intelligently search for better parameters.
+</Note>
+
+## Batch Processing
+
+Batch size controls how many input sequences are processed in parallel. Larger batches are faster but require more VRAM.
+
+### batch_size
+
+Number of input sequences to process simultaneously.
+
+<CodeGroup>
+```toml config.toml
+# Automatic batch size detection (recommended)
+batch_size = 0
+
+# Manual batch size
+batch_size = 32
+```
+
+```bash CLI
+# Use automatic detection
+heretic model-name --batch-size 0
+
+# Set manually
+heretic model-name --batch-size 64
+```
+</CodeGroup>
+
+**Values:**
+- `0` (default): Automatic detection - Heretic benchmarks your system at startup to find the optimal batch size
+- `1-128`: Manual batch size - Use when you know your hardware's limits
+
+<Tip>
+Leave this at `0` unless you're experiencing memory issues. Heretic's automatic detection usually finds the optimal value.
+</Tip>
+
+### max_batch_size
+
+The maximum batch size to try when automatically determining the optimal batch size.
+
+<CodeGroup>
+```toml config.toml
+# Default maximum
+max_batch_size = 128
+
+# Conservative limit (less VRAM available)
+max_batch_size = 64
+
+# Aggressive limit (large VRAM, small model)
+max_batch_size = 256
+```
+
+```bash CLI
+heretic model-name --max-batch-size 64
+```
+</CodeGroup>
+
+**When to adjust:**
+- **Decrease** if you have limited VRAM or run into OOM errors during benchmarking
+- **Increase** if you have high VRAM and want to process larger batches for speed
+
+<Warning>
+Setting `max_batch_size` too high can cause out-of-memory errors during the initial benchmark phase.
+</Warning>
+
+## KL Divergence Parameters
+
+KL divergence measures how much the abliterated model differs from the original model. Heretic balances minimizing refusals with minimizing KL divergence to preserve the model's capabilities.
+
+### kl_divergence_scale
+
+Assumed "typical" value of KL divergence for abliterated models. Used to ensure balanced co-optimization of KL divergence and refusal count.
+
+<CodeGroup>
+```toml config.toml
+# Default scale
+kl_divergence_scale = 1.0
+
+# More weight on preserving model quality
+kl_divergence_scale = 0.5
+
+# More weight on reducing refusals
+kl_divergence_scale = 2.0
+```
+
+```bash CLI
+heretic model-name --kl-divergence-scale 1.5
+```
+</CodeGroup>
+
+**How it works:**
+- This value normalizes KL divergence to be comparable to refusal count in the optimization objective
+- Higher values make the optimizer prioritize reducing refusals over preserving model behavior
+- Lower values make the optimizer prioritize preserving the original model's behavior
+
+<Note>
+The default value of `1.0` typically provides a good balance. You rarely need to change this unless you're specifically trying to bias the optimization toward quality preservation or refusal reduction.
+</Note>
+
+### kl_divergence_target
+
+The KL divergence threshold below which the optimizer focuses on refusal count instead of KL divergence.
+
+<CodeGroup>
+```toml config.toml
+# Default target
+kl_divergence_target = 0.01
+
+# Stricter quality preservation
+kl_divergence_target = 0.005
+
+# More lenient (faster to reach)
+kl_divergence_target = 0.02
+```
+
+```bash CLI
+heretic model-name --kl-divergence-target 0.015
+```
+</CodeGroup>
+
+**Purpose:**
+Prevents the optimizer from exploring parameter combinations that barely change the model ("do nothing" abliterations). Below this threshold, the objective switches to primarily minimizing refusals.
+
+**Typical values:**
+- `0.005-0.01`: Strict quality preservation
+- `0.01` (default): Good balance
+- `0.02-0.05`: More aggressive abliteration
+
+## Advanced Abliteration Parameters
+
+These options control how the abliteration process modifies the model's weight matrices.
+
+### orthogonalize_direction
+
+Whether to orthogonalize refusal directions relative to the "good" direction before ablation.
+
+<CodeGroup>
+```toml config.toml
+# Standard ablation (default)
+orthogonalize_direction = false
+
+# Orthogonalized ablation
+orthogonalize_direction = true
+```
+
+```bash CLI
+heretic model-name --orthogonalize-direction
+```
+</CodeGroup>
+
+**What it does:**
+- When enabled, Heretic adjusts the refusal directions so that only the component orthogonal to the "good" direction is subtracted
+- This can help preserve beneficial model behaviors while removing refusals
+
+**When to enable:**
+- If standard abliteration degrades model quality too much
+- When you want to be more conservative with modifications
+- For models where "good" and "bad" directions are not well-separated
+
+<Info>
+This is an advanced feature. The default (`false`) works well for most models. Enable this if you're experiencing significant quality degradation.
+</Info>
+
+### row_normalization
+
+How to apply row normalization to weight matrices during ablation.
+
+<CodeGroup>
+```toml config.toml
+# No normalization (default)
+row_normalization = "none"
+
+# Pre-normalization
+row_normalization = "pre"
+
+# Full normalization with magnitude preservation
+row_normalization = "full"
+```
+
+```bash CLI
+heretic model-name --row-normalization pre
+```
+</CodeGroup>
+
+**Options:**
+
+<Tabs>
+  <Tab title='"none" (default)'>
+    No row normalization. Abliteration is applied directly to the weight matrices.
+    
+    **Best for:** Most models, standard use cases
+  </Tab>
+  
+  <Tab title='"pre"'>
+    Compute the LoRA adapter relative to row-normalized weights.
+    
+    **Best for:** Experimental, when you want to normalize row magnitudes before ablation
+    
+    <Note>
+    This is an experimental feature based on research into norm-preserving abliteration techniques.
+    </Note>
+  </Tab>
+  
+  <Tab title='"full"'>
+    Like `"pre"`, but renormalizes to preserve original row magnitudes using a LoRA adapter.
+    
+    **Best for:** Maximum preservation of weight matrix structure
+    
+    **Note:** Creates larger output files and may slow down evaluation. Configure the LoRA rank with `full_normalization_lora_rank`.
+  </Tab>
+</Tabs>
+
+<Warning>
+Row normalization options other than `"none"` are experimental. They may improve results for some models but can also degrade quality. Test carefully.
+</Warning>
+
+### full_normalization_lora_rank
+
+The rank of the LoRA adapter when using `row_normalization = "full"`.
+
+<CodeGroup>
+```toml config.toml
+# Only relevant when row_normalization = "full"
+row_normalization = "full"
+full_normalization_lora_rank = 3
+
+# Higher rank (more accurate, larger files)
+full_normalization_lora_rank = 8
+
+# Lower rank (smaller files, less accurate)
+full_normalization_lora_rank = 1
+```
+</CodeGroup>
+
+**Trade-offs:**
+- **Higher rank**: More accurate preservation of row magnitudes, but larger output files and slower evaluation
+- **Lower rank**: Smaller files and faster evaluation, but less accurate approximation
+- **Default (3)**: Good balance for most use cases
+
+## Study Checkpoints
+
+Heretic automatically saves optimization progress to disk, allowing you to resume interrupted runs.
+
+### study_checkpoint_dir
+
+Directory where optimization study progress is saved.
+
+<CodeGroup>
+```toml config.toml
+# Default checkpoint directory
+study_checkpoint_dir = "checkpoints"
+
+# Custom location
+study_checkpoint_dir = "/path/to/my/checkpoints"
+```
+
+```bash CLI
+heretic model-name --study-checkpoint-dir ./my-checkpoints
+```
+</CodeGroup>
+
+**What's saved:**
+- Trial history and results
+- Best parameters found so far
+- Optimization state (for resuming)
+
+<Tip>
+If Heretic is interrupted, it will automatically resume from the last checkpoint when you run it again with the same model and configuration.
+</Tip>
+
+## Complete Example Configurations
+
+<CodeGroup>
+```toml Quick Test
+# Fast optimization for testing
+n_trials = 50
+n_startup_trials = 15
+
+# Automatic batch sizing
+batch_size = 0
+max_batch_size = 64
+
+# Standard KL divergence settings
+kl_divergence_scale = 1.0
+kl_divergence_target = 0.01
+
+# No advanced features
+orthogonalize_direction = false
+row_normalization = "none"
+```
+
+```toml Extensive Search
+# Thorough optimization
+n_trials = 400
+n_startup_trials = 120
+
+# Automatic batch sizing with high limit
+batch_size = 0
+max_batch_size = 256
+
+# Prioritize quality preservation
+kl_divergence_scale = 0.5
+kl_divergence_target = 0.005
+
+# Try orthogonalization
+orthogonalize_direction = true
+row_normalization = "none"
+```
+
+```toml Conservative Quality
+# Focus on preserving model capabilities
+n_trials = 200
+n_startup_trials = 60
+
+# Conservative batch sizes
+batch_size = 0
+max_batch_size = 64
+
+# Strong quality preservation
+kl_divergence_scale = 0.3
+kl_divergence_target = 0.003
+
+# Use orthogonalization and full normalization
+orthogonalize_direction = true
+row_normalization = "full"
+full_normalization_lora_rank = 5
+```
+
+```toml Aggressive Decensoring
+# Focus on maximizing refusal removal
+n_trials = 300
+n_startup_trials = 90
+
+# Large batches for speed
+batch_size = 0
+max_batch_size = 128
+
+# Prioritize refusal reduction
+kl_divergence_scale = 2.0
+kl_divergence_target = 0.02
+
+# Standard ablation
+orthogonalize_direction = false
+row_normalization = "none"
+```
+</CodeGroup>
+
+## Performance Tips
+
+<AccordionGroup>
+  <Accordion title="Speed up optimization">
+    1. Reduce `n_trials` (try 100 instead of 200)
+    2. Increase `max_batch_size` if you have VRAM headroom
+    3. Use quantization: `quantization = "bnb_4bit"`
+    4. Reduce evaluation dataset sizes (see [Evaluation Configuration](/configuration/evaluation))
+  </Accordion>
+  
+  <Accordion title="Improve result quality">
+    1. Increase `n_trials` (try 300-400)
+    2. Lower `kl_divergence_scale` (try 0.5)
+    3. Lower `kl_divergence_target` (try 0.005)
+    4. Enable `orthogonalize_direction = true`
+    5. Use larger evaluation datasets
+  </Accordion>
+  
+  <Accordion title="Reduce VRAM usage">
+    1. Lower `max_batch_size` (try 32 or 64)
+    2. Set manual `batch_size` to a safe value
+    3. Enable quantization in model loading config
+    4. Reduce `max_response_length` (see [Evaluation Configuration](/configuration/evaluation))
+  </Accordion>
+  
+  <Accordion title="Troubleshoot optimization issues">
+    **Problem: All trials produce similar results**
+    - Increase `n_startup_trials` for more exploration
+    - Check if your refusal markers are appropriate
+    
+    **Problem: High KL divergence but still many refusals**
+    - Increase `kl_divergence_scale` to allow more aggressive ablation
+    - Try `orthogonalize_direction = true`
+    
+    **Problem: Low refusals but model quality degraded**
+    - Decrease `kl_divergence_scale` to prioritize quality
+    - Lower `kl_divergence_target` to require better preservation
+    - Try `row_normalization = "full"`
+  </Accordion>
+</AccordionGroup>
+
+## Related Configuration
+
+<CardGroup cols={2}>
+  <Card title="Model Loading" icon="download" href="/configuration/model-loading">
+    Configure batch sizes and memory usage
+  </Card>
+  
+  <Card title="Evaluation" icon="check" href="/configuration/evaluation">
+    Configure datasets and response generation
+  </Card>
+</CardGroup>

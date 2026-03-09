@@ -1,0 +1,456 @@
+---
+title: Uploading Models to Hugging Face
+description: Share your decensored models with the community
+---
+
+After Heretic successfully decensors a model, you can upload it to Hugging Face Hub to share with the community or deploy it to production. This guide covers the complete upload workflow.
+
+## Post-Processing Workflow
+
+Once optimization is complete, Heretic presents you with options:
+
+```
+Optimization finished!
+
+The following trials resulted in Pareto optimal combinations of refusals and KL divergence.
+After selecting a trial, you will be able to save the model, upload it to Hugging Face,
+or chat with it to test how well it works.
+```
+
+<Steps>
+  <Step title="Select a Trial">
+    Choose from the Pareto-optimal trials based on your refusal/quality tradeoff preference
+    
+    ```
+    [Trial  42] Refusals:  3/100, KL divergence: 0.1234
+    [Trial  87] Refusals:  5/100, KL divergence: 0.0891
+    [Trial 156] Refusals:  8/100, KL divergence: 0.0456
+    ```
+  </Step>
+  
+  <Step title="Choose Action">
+    Select "Upload the model to Hugging Face" from the action menu
+    
+    ```
+    What do you want to do with the decensored model?
+    > Save the model to a local folder
+    > Upload the model to Hugging Face
+    > Chat with the model
+    > Return to the trial selection menu
+    ```
+  </Step>
+  
+  <Step title="Authenticate">
+    Provide your Hugging Face access token when prompted
+  </Step>
+  
+  <Step title="Configure Upload">
+    Set repository name and visibility
+  </Step>
+  
+  <Step title="Upload Complete">
+    Model is pushed to Hugging Face Hub with auto-generated model card
+  </Step>
+</Steps>
+
+## Authentication
+
+Heretic needs a Hugging Face access token to upload models.
+
+### Using Existing Token
+
+If you've already logged in via `huggingface-cli`:
+
+```bash
+huggingface-cli login
+```
+
+Heretic will automatically detect and use your stored token.
+
+### Providing Token Manually
+
+If no token is found, Heretic will prompt you:
+
+```
+Hugging Face access token: [hidden input]
+```
+
+To create a token:
+1. Visit https://huggingface.co/settings/tokens
+2. Click "New token"
+3. Select "Write" permissions
+4. Copy the token and paste when prompted
+
+<Warning>
+Heretic does NOT store the token to disk for security reasons. You'll need to re-enter it if you restart the program.
+</Warning>
+
+### Token Verification
+
+After providing a token, Heretic confirms your identity:
+
+```
+Logged in as Jane Doe (jane@example.com)
+```
+
+## Repository Configuration
+
+### Repository Name
+
+Heretic suggests a default name following best practices:
+
+```
+Name of repository: [username/model-name-heretic]
+```
+
+**Default format:** `{username}/{original-model-name}-heretic`
+
+Examples:
+- Original: `Qwen/Qwen3-4B-Instruct-2507`
+- Suggested: `username/Qwen3-4B-Instruct-2507-heretic`
+
+<Tip>
+The `-heretic` suffix helps users identify decensored models and is recognized by the community.
+</Tip>
+
+### Visibility
+
+Choose whether your model should be public or private:
+
+```
+Should the repository be public or private?
+> Public
+> Private
+```
+
+<CardGroup cols={2}>
+  <Card title="Public" icon="globe">
+    Visible to everyone, appears in search results, contributes to the community
+  </Card>
+  <Card title="Private" icon="lock">
+    Only visible to you and collaborators, useful for testing or proprietary models
+  </Card>
+</CardGroup>
+
+## Upload Process
+
+### Merged Model vs LoRA Adapter
+
+Heretic gives you a choice on what to upload:
+
+<Tabs>
+  <Tab title="Merged Model (Recommended)">
+    Uploads the complete model with abliteration applied.
+    
+    **Pros:**
+    - Ready to use immediately
+    - No dependencies on original model
+    - Standard model format
+    
+    **Cons:**
+    - Requires sufficient RAM to merge (see warning below)
+    - Larger upload size
+    - Takes longer to upload
+    
+    ```
+    Uploading merged model...
+    Model uploaded to username/model-name-heretic.
+    ```
+  </Tab>
+  
+  <Tab title="LoRA Adapter Only">
+    Uploads only the small LoRA adapter weights.
+    
+    **Pros:**
+    - Very small file size
+    - Fast upload
+    - No RAM requirements
+    
+    **Cons:**
+    - Users must load base model + adapter
+    - Slightly more complex to use
+    - Not shown if model wasn't loaded with quantization
+    
+    ```
+    Uploading LoRA adapter...
+    Model uploaded to username/model-name-heretic.
+    ```
+  </Tab>
+</Tabs>
+
+### Quantized Model Warning
+
+If you loaded the model with quantization, merging requires additional RAM:
+
+```
+Model was loaded with quantization. Merging requires reloading the base model.
+WARNING: CPU merging requires dequantizing the entire model to system RAM.
+This can lead to system freezes if you run out of memory.
+
+Estimated RAM required (excluding overhead): ~80.00 GB
+
+How do you want to proceed?
+> Merge LoRA into full model (requires sufficient RAM)
+> Cancel
+```
+
+<Warning>
+**RAM Requirements for Merging:**
+- Rule of thumb: ~3x the parameter count in GB
+- 27B model: ~80 GB RAM
+- 70B model: ~200 GB RAM
+
+If you don't have enough RAM, choose "Cancel" or save as LoRA adapter only.
+</Warning>
+
+See [Quantization - Merging Quantized Models](/advanced/quantization#merging-quantized-models) for details.
+
+## Model Card Generation
+
+Heretic automatically generates a comprehensive model card:
+
+### Auto-Generated Content
+
+The model card includes:
+
+<Steps>
+  <Step title="Introduction Section">
+    Description of the decensoring process and Heretic version used
+  </Step>
+  <Step title="Performance Metrics">
+    Refusal rates and KL divergence for the selected trial
+    
+    ```markdown
+    ## Performance
+    
+    - Refusals: 3/100 (original model: 97/100)
+    - KL divergence: 0.1234
+    ```
+  </Step>
+  <Step title="Trial Parameters">
+    Complete parameter configuration for reproducibility
+  </Step>
+  <Step title="Tags">
+    Automatic tags for discoverability:
+    - `heretic`
+    - `uncensored`
+    - `decensored`
+    - `abliterated`
+  </Step>
+</Steps>
+
+### Preserved Original Content
+
+If the original model has a README:
+- Original content is preserved
+- Heretic introduction is prepended
+- Original tags are kept (+ new tags added)
+- Model architecture info retained
+
+<Info>
+The generated model card helps users understand how your model was created and sets expectations for its behavior.
+</Info>
+
+## Naming Conventions
+
+The Heretic community has established naming conventions:
+
+### Standard Format
+
+```
+{username}/{base-model-name}-heretic
+```
+
+Examples:
+- `p-e-w/gemma-3-12b-it-heretic`
+- `p-e-w/gpt-oss-20b-heretic`
+- `p-e-w/Qwen3-4B-Instruct-2507-heretic`
+
+### Why Use the Suffix?
+
+<CardGroup cols={2}>
+  <Card title="Recognition" icon="tag">
+    Users can instantly identify Heretic-processed models
+  </Card>
+  <Card title="Search" icon="magnifying-glass">
+    Models appear in https://huggingface.co/models?other=heretic
+  </Card>
+  <Card title="Community" icon="users">
+    Join 1000+ other Heretic models on the Hub
+  </Card>
+  <Card title="Consistency" icon="check">
+    Follows established community standards
+  </Card>
+</CardGroup>
+
+## Community Models
+
+The Heretic community has created and published over 1,000 models:
+
+### Browse All Heretic Models
+
+Visit the Hugging Face Hub:
+- **All Heretic models:** https://huggingface.co/models?other=heretic
+- **Official collection (The Bestiary):** https://huggingface.co/collections/p-e-w/the-bestiary
+
+### The Bestiary Collection
+
+Curated collection of high-quality Heretic models created by the project maintainer:
+
+```
+https://huggingface.co/collections/p-e-w/the-bestiary
+```
+
+Includes models like:
+- `p-e-w/gemma-3-12b-it-heretic`
+- `p-e-w/gpt-oss-20b-heretic`
+- `p-e-w/Qwen3-4B-Instruct-2507-heretic`
+
+<Tip>
+Browse The Bestiary for examples of well-configured Heretic models and inspiration for your own uploads.
+</Tip>
+
+## Upload Workflow Example
+
+Complete example of uploading a model:
+
+```bash
+# 1. Run Heretic
+heretic Qwen/Qwen3-4B-Instruct-2507
+
+# 2. After optimization completes, select a trial
+# [Trial 42] Refusals: 3/100, KL divergence: 0.1234
+
+# 3. Choose "Upload the model to Hugging Face"
+
+# 4. Authenticate (if needed)
+Hugging Face access token: hf_...
+Logged in as username (user@example.com)
+
+# 5. Configure repository
+Name of repository: username/Qwen3-4B-Instruct-2507-heretic
+Should the repository be public or private? Public
+
+# 6. Choose merge strategy
+How do you want to proceed?
+> Merge LoRA into full model
+
+# 7. Wait for upload
+Uploading merged model...
+Model uploaded to username/Qwen3-4B-Instruct-2507-heretic.
+```
+
+Your model is now available at:
+```
+https://huggingface.co/username/Qwen3-4B-Instruct-2507-heretic
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Test Before Uploading">
+    Use the "Chat with the model" option to verify quality
+    
+    ```
+    What do you want to do with the decensored model?
+    > Chat with the model
+    ```
+  </Step>
+  
+  <Step title="Choose the Right Trial">
+    Balance refusal suppression vs KL divergence for your use case
+    
+    - **Low KL divergence (less than 0.5):** Better preserves original capabilities
+    - **Low refusals (less than 5/100):** More effective decensoring
+  </Step>
+  
+  <Step title="Use Descriptive Names">
+    Include the base model name and `-heretic` suffix
+    
+    ✅ `username/llama-3.1-8b-instruct-heretic`  
+    ❌ `username/my-uncensored-model`
+  </Step>
+  
+  <Step title="Set Appropriate Visibility">
+    Start with private for testing, make public when satisfied
+  </Step>
+  
+  <Step title="Add Custom README Content">
+    Edit the model card after upload to add:
+    - Usage examples
+    - Benchmark results
+    - Known limitations
+    - License information
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Authentication Failed
+
+**Error:** Invalid token or permission denied
+
+**Solutions:**
+- Verify token has "Write" permissions
+- Check token hasn't expired
+- Regenerate token at https://huggingface.co/settings/tokens
+
+### Upload Failed
+
+**Error:** Network error or timeout during upload
+
+**Solutions:**
+- Check internet connection
+- Try uploading during off-peak hours
+- Save locally first, then upload manually:
+  ```bash
+  huggingface-cli upload username/model-name ./local-model-dir
+  ```
+
+### Insufficient RAM for Merge
+
+**Error:** System freezes or OOM during merge
+
+**Solutions:**
+1. **Save LoRA adapter only:**
+   ```
+   Choose "Cancel" when prompted to merge
+   Upload the adapter (much smaller)
+   ```
+
+2. **Merge on a larger machine:**
+   ```bash
+   # Save locally first
+   Action: "Save the model to a local folder"
+   
+   # Then transfer and merge on a machine with more RAM
+   ```
+
+3. **Use cloud instance:**
+   - Rent a high-RAM instance temporarily
+   - Load model, merge, and upload from there
+
+## Local Save Option
+
+Before or instead of uploading, you can save locally:
+
+```
+What do you want to do with the decensored model?
+> Save the model to a local folder
+
+Path to the folder: /path/to/save/location
+
+Saving merged model...
+Model saved to /path/to/save/location.
+```
+
+This is useful for:
+- Testing before upload
+- Offline deployment
+- Manual upload later via `huggingface-cli`
+
+## Related Topics
+
+- [Quantization](/advanced/quantization) - RAM requirements for merging quantized models
+- [Hardware Optimization](/advanced/hardware-optimization) - Optimize processing performance
+- [Configuration](/configuration/overview) - Configure optimization parameters

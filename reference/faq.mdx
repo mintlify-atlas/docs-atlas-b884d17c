@@ -1,0 +1,479 @@
+---
+title: FAQ
+description: Frequently asked questions about Heretic
+---
+
+Answers to common questions about Heretic's functionality, performance, and usage.
+
+## General Questions
+
+<AccordionGroup>
+  <Accordion title="What is abliteration?">
+    **Abliteration** (or "directional ablation") is a technique for removing censorship from language models by modifying their internal weight matrices.
+
+    ### How It Works
+
+    The technique was introduced by [Arditi et al. (2024)](https://arxiv.org/abs/2406.11717) and works by:
+
+    1. **Identifying refusal directions**: Computing the difference in hidden states between "harmful" and "harmless" prompts
+    2. **Orthogonalizing weight matrices**: Modifying specific transformer components (attention out-projection and MLP down-projection) to inhibit these refusal directions
+    3. **Preserving model capabilities**: Making surgical changes that remove censorship while minimizing damage to the model's general intelligence
+
+    ### Why "Abliteration"?
+
+    The term combines:
+    - **Ablation**: Removing or inhibiting specific model behaviors
+    - **Obliteration**: Completely eliminating censorship responses
+
+    ### Heretic's Innovations
+
+    Heretic advances the original abliteration technique:
+
+    - **Automatic parameter optimization**: Uses TPE (Tree-structured Parzen Estimator) to find optimal ablation parameters
+    - **Flexible weight kernels**: Adjusts ablation strength across different layers
+    - **Direction interpolation**: Uses fractional direction indices to explore directions beyond individual layers
+    - **Component-specific ablation**: Applies different parameters to attention vs. MLP components
+
+    <Info>
+    Unlike fine-tuning or RLHF, abliteration doesn't require training data or GPU-intensive optimization loops. It's a direct weight modification that takes minutes to hours rather than days.
+    </Info>
+  </Accordion>
+
+  <Accordion title="How long does it take to process a model?">
+    Processing time depends on several factors:
+
+    ### By Model Size (RTX 3090, default settings)
+
+    | Model Size | Approximate Time |
+    |------------|------------------|
+    | 1-4B parameters | 15-30 minutes |
+    | 7-8B parameters | 45-60 minutes |
+    | 13B parameters | 1-2 hours |
+    | 20-30B parameters | 2-3 hours |
+    | 70B+ parameters | 4-8 hours |
+
+    **Benchmark**: Llama-3.1-8B-Instruct takes approximately **45 minutes** on an RTX 3090 with default configuration.
+
+    ### Factors Affecting Speed
+
+    **Hardware:**
+    - GPU model (faster GPUs = faster processing)
+    - VRAM capacity (affects batch size)
+    - CPU speed (for CPU-based operations like PaCMAP)
+
+    **Configuration:**
+    - Number of trials (`--n-trials`, default ~20)
+    - Batch size (auto-determined or manual)
+    - Quantization (slightly slower but uses less VRAM)
+
+    **Model Architecture:**
+    - Number of layers
+    - Hidden dimension size
+    - MoE models take longer than dense models
+
+    ### Phases of Processing
+
+    1. **Model loading**: 1-5 minutes (depends on model size and quantization)
+    2. **Batch size benchmarking**: 1-2 minutes
+    3. **Computing refusal directions**: 5-15 minutes
+    4. **Optimization trials**: 30 minutes - several hours (bulk of time)
+    5. **Model merging** (if saving): 5-20 minutes
+
+    <Tip>
+    You can interrupt the process with Ctrl+C at any time. Heretic saves progress to a checkpoint file, allowing you to continue later from where you left off.
+    </Tip>
+  </Accordion>
+
+  <Accordion title="Do I need a GPU?">
+    **Technically no, but practically yes.**
+
+    ### Without a GPU
+
+    Heretic can run on CPU, but:
+
+    ```
+    [bold yellow]No GPU or other accelerator detected. 
+    Operations will be slow.[/]
+    ```
+
+    CPU processing is **significantly slower**:
+    - An 8B model might take 12-24 hours instead of 45 minutes
+    - Larger models (20B+) could take days
+    - System RAM requirements are higher
+
+    ### Supported Accelerators
+
+    Heretic supports multiple hardware accelerators:
+
+    - **CUDA** (NVIDIA GPUs) - Most tested and recommended
+    - **XPU** (Intel GPUs)
+    - **MLU** (Cambricon)
+    - **SDAA** (SD Technology)
+    - **MUSA** (Moore Threads)
+    - **NPU** (Ascend)
+    - **MPS** (Apple Metal on M-series Macs)
+
+    ### Recommended Hardware
+
+    | Model Size | Minimum VRAM | Recommended VRAM |
+    |------------|--------------|------------------|
+    | 7-8B | 16 GB (with quantization) | 24 GB |
+    | 13B | 24 GB (with quantization) | 40 GB |
+    | 20-30B | 40 GB (with quantization) | 80 GB |
+    | 70B | 80 GB (with quantization) | 160 GB |
+
+    <Warning>
+    Multi-GPU setups are supported, but the model must fit on available VRAM. Heretic uses `accelerate` for device mapping.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="Can I use quantization?">
+    **Yes!** Quantization is highly recommended for large models or limited VRAM.
+
+    ### Enabling Quantization
+
+    ```bash
+    heretic --quantization bnb_4bit your-model-name
+    ```
+
+    Or in `config.toml`:
+
+    ```toml
+    quantization = "bnb_4bit"
+    ```
+
+    ### Benefits
+
+    - **~4x VRAM reduction**: Loads models in 4-bit precision instead of 16-bit
+    - **Enables larger models**: Run 13B models on 16GB VRAM, 70B on 48GB
+    - **Quality preservation**: Quantization affects loading, but final model can be full precision
+
+    ### Important Considerations
+
+    <Warning>
+    When using quantization, **merging requires significant system RAM**:
+
+    - The model must be dequantized to full precision for saving
+    - Requires ~3x parameter count in GB of system RAM
+    - Example: 27B model needs ~80GB RAM, 70B needs ~200GB RAM
+    - Can cause system freezes if insufficient RAM
+    </Warning>
+
+    ### The Trade-off
+
+    **During processing:**
+    - Low VRAM usage
+    - Slightly slower than full precision
+    - Fully functional optimization
+
+    **When saving:**
+    - Must reload base model at full precision
+    - Merge LoRA adapter into base model
+    - Requires substantial system RAM
+
+    ### Best Practices
+
+    1. Use quantization during processing
+    2. Test the model using the built-in chat feature
+    3. Only save/upload if you have sufficient RAM, or:
+    4. Use a high-RAM instance specifically for the merge step
+
+    <Tip>
+    Heretic shows an estimated RAM requirement before merging (based on model size). Pay attention to this warning!
+    </Tip>
+  </Accordion>
+
+  <Accordion title="How do results compare to manual abliteration?">
+    Heretic produces **comparable or better results** than manual abliteration by experts.
+
+    ### Benchmark: Gemma-3-12B-IT
+
+    Comparison with manually abliterated versions:
+
+    | Model | Creator | Refusals | KL Divergence | Notes |
+    |-------|---------|----------|---------------|-------|
+    | Original | Google | 97/100 | 0.00 | Baseline |
+    | Abliterated v2 | mlabonne | 3/100 | 1.04 | Manual parameters |
+    | Abliterated | huihui-ai | 3/100 | 0.45 | Manual parameters |
+    | **Heretic** | **Automatic** | **3/100** | **0.16** | **Automatic optimization** |
+
+    ### What This Means
+
+    **Refusals (lower is better):**
+    - All abliteration methods achieve similar refusal suppression
+    - Heretic: 3/100 (97% refusal removal)
+    - Comparable to best manual efforts
+
+    **KL Divergence (lower is better):**
+    - Measures how much the model's behavior has changed
+    - Lower KL divergence = better preservation of original capabilities
+    - Heretic achieves **0.16** vs. 0.45-1.04 for manual methods
+    - **Values above 1.0** typically indicate significant capability damage
+
+    ### User Feedback
+
+    From the community:
+
+    > "I just downloaded GPT-OSS 20B Heretic model and holy shit. It gives properly formatted long responses to sensitive topics, using the exact uncensored words that you would expect from an uncensored model, produces markdown format tables with details and whatnot. Looks like this is the best abliterated version of this model so far..."
+
+    > "Heretic GPT 20b seems to be the best uncensored model I have tried yet. It doesn't destroy the model's intelligence and it is answering prompts normally would be rejected by the base model."
+
+    > "Qwen3-4B-Instruct-2507-heretic has been the best unquantized abliterated model that I have been able to run on 16gb vram."
+
+    ### Why Automatic Is Better
+
+    **Manual abliteration challenges:**
+    - Requires deep understanding of transformer internals
+    - Trial-and-error parameter tuning
+    - Time-intensive experimentation
+    - Hard to find optimal balance between refusal suppression and capability preservation
+
+    **Heretic's advantages:**
+    - Explores thousands of parameter combinations
+    - Uses sophisticated optimization (TPE algorithm)
+    - Optimizes for both refusal reduction AND capability preservation simultaneously
+    - Anyone can achieve expert-level results
+
+    <Info>
+    The benchmarks were compiled using PyTorch 2.8 on an RTX 5090. Exact values may vary slightly by platform and hardware, but relative differences remain consistent.
+    </Info>
+  </Accordion>
+
+  <Accordion title="What models can I use?">
+    See the [Supported Models](/reference/supported-models) page for comprehensive information.
+
+    ### Quick Summary
+
+    **✅ Supported:**
+    - Most dense transformer models
+    - Many multimodal (vision-language) models
+    - Several MoE (Mixture of Experts) architectures
+    - Standard decoder-only transformers
+
+    **❌ Not Supported:**
+    - State Space Models (SSMs) like Mamba
+    - Hybrid architectures (e.g., Jamba)
+    - Models with inhomogeneous layers
+    - Novel attention mechanisms that deviate from standard transformers
+
+    ### Finding Models to Use
+
+    **Community models:**
+    - [Over 1,000 Heretic models on Hugging Face](https://huggingface.co/models?other=heretic)
+    - Search for models tagged with `heretic`
+
+    **Curated collection:**
+    - [The Bestiary](https://huggingface.co/collections/p-e-w/the-bestiary)
+    - Hand-picked high-quality examples
+
+    ### Testing Compatibility
+
+    The easiest way to check compatibility:
+
+    ```bash
+    heretic model-name
+    ```
+
+    If incompatible, you'll get an error during loading or abliteration.
+  </Accordion>
+
+  <Accordion title="How do I share my model?">
+    Heretic makes sharing models easy with built-in Hugging Face integration.
+
+    ### During Processing
+
+    After optimization completes, Heretic prompts you with options:
+    1. Save the model to a local folder
+    2. **Upload the model to Hugging Face** ← Select this
+    3. Chat with the model
+    4. Return to trial selection
+
+    ### Upload Process
+
+    **Step 1: Authentication**
+    ```bash
+    # Option A: Login before running Heretic
+    huggingface-cli login
+
+    # Option B: Provide token when prompted
+    # Heretic will ask for your access token
+    ```
+
+    Get a token at: [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+
+    Make sure your token has **write** permissions.
+
+    **Step 2: Repository Details**
+
+    Heretic will prompt you for:
+    - **Repository name**: Defaults to `username/model-name-heretic`
+    - **Visibility**: Public or Private
+
+    **Step 3: Automatic Upload**
+
+    Heretic handles:
+    - Merging LoRA adapter (if quantized)
+    - Uploading model weights
+    - Uploading tokenizer
+    - Creating/updating model card with:
+      - Heretic badge and tags (`heretic`, `uncensored`, `abliterated`)
+      - Performance metrics (refusals, KL divergence)
+      - Link back to base model
+      - Processing details
+
+    ### Model Card Tags
+
+    Heretic automatically adds:
+    - `heretic` - Identifies it was processed with Heretic
+    - `uncensored` - Makes it discoverable
+    - `decensored` - Alternative search term
+    - `abliterated` - Technique used
+
+    ### Best Practices
+
+    **Naming convention:**
+    ```
+    username/base-model-name-heretic
+    ```
+
+    Examples:
+    - `p-e-w/gemma-3-12b-it-heretic`
+    - `your-name/llama-3.1-8b-heretic`
+
+    **Repository description:**
+
+    Heretic includes in the model card:
+    - Base model reference
+    - Refusal suppression metrics
+    - KL divergence score
+    - Heretic version used
+    - Link to Heretic project
+
+    **License considerations:**
+
+    - Your model inherits the base model's license
+    - Heretic itself is AGPL-3.0, but this doesn't affect generated models
+    - Always respect the original model's license terms
+
+    <Warning>
+    **Quantized models and merging:**
+
+    If you used quantization, uploading requires:
+    - Reloading the base model at full precision
+    - Sufficient system RAM (~3x parameter count in GB)
+    - Can take 10-30 minutes for large models
+
+    See [Troubleshooting](/reference/troubleshooting) for memory requirements.
+    </Warning>
+
+    ### Manual Upload
+
+    If you prefer more control:
+
+    1. Select "Save the model to a local folder"
+    2. Edit the model card manually
+    3. Upload using:
+
+    ```bash
+    huggingface-cli upload your-name/model-name ./local-model-path
+    ```
+  </Accordion>
+
+  <Accordion title="Can I resume interrupted processing?">
+    **Yes!** Heretic automatically saves progress and can resume from interruptions.
+
+    ### How Checkpointing Works
+
+    Heretic uses **Optuna's journal storage** to save:
+    - Completed trials and their results
+    - Configuration parameters
+    - Best found parameters so far
+
+    **Checkpoint location:**
+    ```
+    ~/.cache/heretic/studies/<model-name>.jsonl
+    ```
+
+    Or custom location with:
+    ```bash
+    heretic --study-checkpoint-dir /your/path model-name
+    ```
+
+    ### Interrupting Safely
+
+    Press **Ctrl+C** at any time:
+    - Current trial will be marked as pruned
+    - All previous completed trials are saved
+    - You can resume later from the same point
+
+    ### Resuming a Run
+
+    Run the same command again:
+    ```bash
+    heretic your-model-name
+    ```
+
+    Heretic will detect the checkpoint and prompt:
+    ```
+    [yellow]You have already processed this model, but the run was interrupted.[/]
+    
+    How would you like to proceed?
+    1. Continue the previous run
+    2. Ignore the previous run and start from scratch
+    3. Exit program
+    ```
+
+    **Continue the previous run:**
+    - Resumes optimization from where it stopped
+    - Uses the original configuration (ignores new CLI arguments)
+    - Completes remaining trials
+
+    **Start from scratch:**
+    - Deletes the checkpoint file
+    - Begins fresh optimization
+    - Uses current configuration
+
+    ### Completed Runs
+
+    If you finished all trials and run again:
+    ```
+    [green]You have already processed this model.[/]
+    
+    How would you like to proceed?
+    1. Show the results from the previous run
+    2. Ignore the previous run and start from scratch
+    3. Exit program
+    ```
+
+    This lets you:
+    - Export models from completed runs
+    - Run additional trials for better results
+    - Test different trials from the Pareto front
+
+    ### Adding More Trials
+
+    After viewing results, you can:
+    ```
+    Select: "Run additional trials"
+    Enter: 10  # Run 10 more trials
+    ```
+
+    This extends the optimization without starting over.
+
+    <Tip>
+    Checkpoints are specific to each model (based on model name/path). Processing different models won't interfere with each other's checkpoints.
+    </Tip>
+  </Accordion>
+</AccordionGroup>
+
+## Getting More Help
+
+<CardGroup cols={2}>
+  <Card title="Discord Community" icon="discord" href="https://discord.gg/gdXc48gSyT">
+    Join the community for real-time help and discussion
+  </Card>
+
+  <Card title="GitHub Repository" icon="github" href="https://github.com/p-e-w/heretic">
+    Report issues, request features, or browse the source code
+  </Card>
+</CardGroup>

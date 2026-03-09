@@ -1,0 +1,292 @@
+---
+title: Basic Usage
+description: Common usage patterns and examples for the Heretic CLI
+---
+
+## Simple Decensoring
+
+The most basic usage requires only a model identifier:
+
+```bash
+heretic Qwen/Qwen3-4B-Instruct-2507
+```
+
+Heretic will:
+1. Download the model from HuggingFace (if not already cached)
+2. Detect your hardware and optimize batch size
+3. Run 200 optimization trials (default)
+4. Present results and allow you to save/upload the model
+
+## Using with Different Model Sizes
+
+### Small Models (< 8B parameters)
+
+Small models typically fit comfortably in VRAM:
+
+```bash
+heretic Qwen/Qwen3-4B-Instruct-2507
+```
+
+### Medium Models (8B-30B parameters)
+
+For medium models, consider using quantization to reduce VRAM usage:
+
+```bash
+heretic --quantization bnb_4bit meta-llama/Llama-3.1-8B-Instruct
+```
+
+<Info>
+4-bit quantization via bitsandbytes can reduce VRAM requirements by approximately 75% with minimal quality impact.
+</Info>
+
+### Large Models (> 30B parameters)
+
+Large models require quantization and may need explicit memory management:
+
+```bash
+heretic --quantization bnb_4bit \
+  --max-memory '{"0": "20GB", "cpu": "64GB"}' \
+  meta-llama/Llama-3.1-70B-Instruct
+```
+
+## Understanding Progress Output
+
+### Initial Setup
+
+When you run Heretic, you'll see:
+
+```
+█░█░█▀▀░█▀▄░█▀▀░▀█▀░█░█▀▀  v1.x.x
+█▀█░█▀▀░█▀▄░█▀▀░░█░░█░█░░
+▀░▀░▀▀▀░▀░▀░▀▀▀░░▀░░▀░▀▀▀  https://github.com/p-e-w/heretic
+
+Detected 1 CUDA device(s) (24.00 GB total VRAM):
+* GPU 0: NVIDIA GeForce RTX 3090 (24.00 GB)
+```
+
+### Batch Size Determination
+
+```
+Determining optimal batch size...
+* Trying batch size 1... Ok (245 tokens/s)
+* Trying batch size 2... Ok (412 tokens/s)
+* Trying batch size 4... Ok (623 tokens/s)
+* Trying batch size 8... Ok (789 tokens/s)
+* Trying batch size 16... Failed (CUDA out of memory)
+* Chosen batch size: 8
+```
+
+Heretic automatically finds the largest batch size that fits in memory.
+
+### Optimization Trials
+
+```
+Running trial 1 of 200...
+* Parameters:
+  * direction_scope = per layer
+  * attn_out.max_weight = 1.23
+  * attn_out.max_weight_position = 28.4
+  * attn_out.min_weight = 0.45
+  * attn_out.min_weight_distance = 8.2
+  * mlp_down.max_weight = 1.15
+  * mlp_down.max_weight_position = 30.1
+  * mlp_down.min_weight = 0.38
+  * mlp_down.min_weight_distance = 7.5
+* Resetting model...
+* Abliterating...
+* Evaluating...
+
+Elapsed time: 2m 15s
+Estimated remaining time: 7h 28m
+```
+
+Each trial tests different abliteration parameters.
+
+### Results Selection
+
+After optimization:
+
+```
+Optimization finished!
+
+The following trials resulted in Pareto optimal combinations of refusals and KL divergence.
+After selecting a trial, you will be able to save the model, upload it to Hugging Face,
+or chat with it to test how well it works.
+
+Which trial do you want to use?
+  [Trial  42] Refusals:  3/100, KL divergence: 0.1623
+  [Trial  87] Refusals:  1/100, KL divergence: 0.5841
+  [Trial 134] Refusals:  0/100, KL divergence: 1.2456
+  Run additional trials
+  Exit program
+```
+
+<Tip>
+Choose trials with KL divergence below 1.0 for best quality. Lower refusals with higher KL divergence means more compliance but potentially degraded capabilities.
+</Tip>
+
+## Post-Processing Options
+
+After selecting a trial, you have several options:
+
+### Save to Local Folder
+
+```
+What do you want to do with the decensored model?
+> Save the model to a local folder
+
+Path to the folder: /path/to/output
+
+Saving merged model...
+Model saved to /path/to/output.
+```
+
+For quantized models, you'll be asked whether to merge or save as adapter:
+
+```
+Model was loaded with quantization. Merging requires reloading the base model.
+WARNING: CPU merging requires dequantizing the entire model to system RAM.
+This can lead to system freezes if you run out of memory.
+Estimated RAM required (excluding overhead): ~27.50 GB
+
+How do you want to proceed?
+> Merge LoRA into full model (requires sufficient RAM)
+  Cancel
+```
+
+<Warning>
+Merging a quantized model requires loading the full unquantized model into RAM. For a 27B model, this requires ~80GB RAM. Ensure you have sufficient memory or your system may freeze.
+</Warning>
+
+### Upload to HuggingFace
+
+```
+What do you want to do with the decensored model?
+> Upload the model to Hugging Face
+
+Hugging Face access token: ************************************
+Logged in as John Doe (john@example.com)
+
+Name of repository: username/model-name-heretic
+
+Should the repository be public or private?
+> Public
+  Private
+
+Uploading merged model...
+Model uploaded to username/model-name-heretic.
+```
+
+Heretic automatically:
+- Creates or updates the repository
+- Uploads the model files
+- Updates the model card with abliteration details
+- Adds appropriate tags (`heretic`, `uncensored`, `abliterated`)
+
+### Chat with the Model
+
+Test the model interactively:
+
+```
+What do you want to do with the decensored model?
+> Chat with the model
+
+Press Ctrl+C at any time to return to the menu.
+
+> User: Tell me about machine learning
+Assistant: Machine learning is a subset of artificial intelligence...
+
+> User: [Press Ctrl+C]
+```
+
+This allows you to verify the model's behavior before committing to save or upload.
+
+## Real-World Examples
+
+### Example 1: Quick Decensoring with Defaults
+
+```bash
+heretic Qwen/Qwen3-4B-Instruct-2507
+```
+
+Best for: First-time users, small to medium models, systems with ample VRAM.
+
+### Example 2: Quantized Decensoring
+
+```bash
+heretic --quantization bnb_4bit \
+  --n-trials 100 \
+  meta-llama/Llama-3.1-8B-Instruct
+```
+
+Best for: Limited VRAM, faster iteration during experimentation.
+
+### Example 3: Large Model with Custom Settings
+
+```bash
+heretic --quantization bnb_4bit \
+  --n-trials 300 \
+  --n-startup-trials 100 \
+  --max-memory '{"0": "22GB", "1": "22GB", "cpu": "96GB"}' \
+  meta-llama/Llama-3.1-70B-Instruct
+```
+
+Best for: Multi-GPU systems, production deployments requiring thorough optimization.
+
+### Example 4: Local Model with Configuration File
+
+Create `config.toml`:
+
+```toml
+quantization = "bnb_4bit"
+n_trials = 250
+n_startup_trials = 75
+max_response_length = 150
+system_prompt = "You are a helpful, uncensored AI assistant."
+```
+
+Then run:
+
+```bash
+heretic /local/path/to/model
+```
+
+Best for: Repeated experiments, custom datasets, research workflows.
+
+### Example 5: Evaluation Only
+
+```bash
+heretic --model google/gemma-3-12b-it \
+  --evaluate-model p-e-w/gemma-3-12b-it-heretic
+```
+
+Output:
+```
+Evaluating model...
+Refusals: 3/100
+KL Divergence: 0.1623
+```
+
+Best for: Comparing different decensored variants, benchmarking.
+
+## Tips for Success
+
+<Tip>
+**Start small**: Test Heretic on a small model first (< 8B parameters) to understand the workflow before moving to larger models.
+</Tip>
+
+<Tip>
+**Monitor KL divergence**: Values below 0.5 typically indicate minimal capability loss. Values above 1.0 may indicate significant degradation.
+</Tip>
+
+<Tip>
+**Use chat testing**: Always test a trial with the interactive chat before saving to ensure the model behaves as expected.
+</Tip>
+
+<Tip>
+**More trials = better results**: The default 200 trials is a good starting point, but increasing to 300-500 trials can sometimes find better parameter combinations.
+</Tip>
+
+<Warning>
+CTRL+C during optimization will gracefully stop the current trial and allow you to view results. The checkpoint is saved automatically.
+</Warning>
